@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chess Checkup — Session 1 data pipeline</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 3rem auto; padding: 0 1rem; }
+    input { font-size: 1rem; padding: .4rem; }
+    button { font-size: 1rem; padding: .4rem .8rem; }
+    #status { white-space: pre-wrap; background: #f4f4f4; padding: 1rem; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <h1>Chess Checkup</h1>
+  <p>Session 1: data pipeline. All metric output goes to the <strong>browser console</strong>.</p>
+  <input id="username" value="Ari_Ferrari_0" aria-label="Lichess username">
+  <button id="run">Run checkup</button>
+  <pre id="status">Idle.</pre>
+
+  <script type="module">
+    import { Chess } from 'https://cdn.jsdelivr.net/npm/chess.js@1.4.0/+esm';
+
+    // ------------------------------------------------------------------
+    // CONFIG — every tunable constant lives here (spec section 3).
+    // ------------------------------------------------------------------
+    const CONFIG = {
+      MAX_GAMES: 100,
+      PERF_TYPES: 'rapid,classical',
+      MIN_GAMES: 15,              // below this: refuse to diagnose
+
+      // Win-probability conversion, copied (not recalled) from the Lichess
+      // source on 2026-06-10: lichess-org/scalachess core/src/main/scala/eval.scala
+      //   winningChances(cp) = 2 / (1 + exp(-0.00368208 * cp)) - 1, clamped [-1, 1]
+      //   WinPercent = 50 + 50 * winningChances(cp), cp ceiled at +/-1000
+      WIN_PERCENT_MULTIPLIER: -0.00368208,
+      EVAL_CEILING_CP: 1000,      // Lichess caps cp here; mate scores map to +/-ceiling
+
+      BLUNDER_SWING_CP: 200,      // eval swing against the mover
+      SANITY_WINDOW_CP: 500,      // ignore swings when |eval before move| beyond this
+      EQUALISH_CP: 200,           // "roughly equal" band for tactics metric A
+      MISSED_WIN_GAIN_CP: 250,    // best move gains this much over the move played
+
+      WINNING_CP: 300,            // "winning position" threshold (user POV)
+      WINNING_SUSTAIN_PLIES: 2,   // must hold for this many consecutive plies
+
+      ENDGAME_NONPAWN_POINTS: 13, // Q=9 R=5 B/N=3; endgame if both sides <= this, or queens off
+      ENDGAME_GOOD_ENTRY_CP: 200, // "entered the endgame clearly better"
+
+      OPENING_EXIT_PLY: 24,       // move 12
+
+      DISASTER_EVAL_CP: -100,     // opening family repeatedly at/below this at exit
+      DISASTER_MIN_COUNT: 3,
+
+      LOW_TIME_SECONDS: 20,
+      LOW_TIME_FRACTION: 0.10,    // of starting time
+      SNAP_MOVE_SECONDS: 10,      // less thought than this on a non-forced move
+    };
+
+    const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+    // Not used by session-1 metrics (raw cp thresholds per spec), kept for session 2.
+    const winPercent = cp =>
+      50 + 50 * clamp(2 / (1 + Math.exp(CONFIG.WIN_PERCENT_MULTIPLIER * clamp(cp, -CONFIG.EVAL_CEILING_CP, CONFIG.EVAL_CEILING_CP))) - 1, -1, 1);
+
+    // ------------------------------------------------------------------
+    // Fetch (spec section 3). Response shape facts verified 2026-06-10
+    // against real games — see data-notes.md.
+    // ------------------------------------------------------------------
+    async function fetchGames(username) {
+      const params = new URLSearchParams({
+        max: CONFIG.MAX_GAMES, rated: true, perfType: CONFIG.PERF_TYPES,
+        analysed: true, evals: true, clocks: true, opening: true, sort: 'dateDesc',
+      });
+      const res = await fetch(`https://lichess.org/api/games/user/${encodeURIComponent(username)}?${params}`,
+        { headers: { Accept: 'application/x-ndjson' } });
+      if (!res.ok) throw new Error(`Lichess API ${res.status} ${res.statusText}`);
+      const text = await res.text();
+      return text.split('\n').filter(Boolean).map(line => JSON.parse(line));
+    }
+
+    // ------------------------------------------------------------------
+    // Per-game analysis
+    // ------------------------------------------------------------------
+    function analyzeGame(g, userId) {
+      const color =
+        g.players.white.user?.id === userId ? 'w' :
+        g.players.black.user?.id === userId ? 'b' : null;
+      const moves = (g.moves || '').split(' ').filter(Boolean);
+      if (!color || !g.analysis || moves.length === 0) return null;
+
+      const userIsWhite = color === 'w';
+      const result = !g.winner ? 'draw' : (g.winner === 'white') === userIsWhite ? 'win' : 'loss';
+
+      // Eval after each ply, white POV, capped. Mate -> signed ceiling.
+      // Verified: games ending in checkmate have one fewer analysis entry
+      // than moves, so the final slot may be null.
+      const evalAfter = moves.map((_, i) => {
+        const e = g.analysis[i];
+        if (!e) return null;
+        if (typeof e.eval === 'number') return clamp(e.eval, -CONFIG.EVAL_CEILING_CP, CONFIG.EVAL_CEILING_CP);
+        if (typeof e.mate === 'number') return e.mate > 0 ? CONFIG.EVAL_CEILING_CP : -CONFIG.EVAL_CEILING_CP;
+        return null;
+      });
+      const evalBefore = i => i === 0 ? 0 : evalAfter[i - 1];
+
+      // Clock: verified units are centiseconds; clocks[i] = mover's remaining
+      // time after ply i; array is often 1 longer than moves (extra ignored).
+      const initialCs = (g.clock?.initial ?? 0) * 100;
+      const incrementCs = (g.clock?.increment ?? 0) * 100;
+      const clockAfter = i => g.clocks?.[i] ?? null;
+      const clockBefore = i => i >= 2 ? clockAfter(i - 2) : (initialCs || null);
+      const timeSpentCs = i => {
+        const before = clockBefore(i), after = clockAfter(i);
+        return before == null || after == null ? null : Math.max(0, before - after + incrementCs);
+      };
+
+      // Replay with chess.js: tag each ply with the phase of the position the
+      // mover faced, and count legal moves (for the "forced move" exemption).
+      const phaseBefore = [];   // 'opening' | 'middlegame' | 'endgame'
+      const legalMovesBefore = [];
+      const chess = new Chess();
+      let replayBroke = null;
+      for (let i = 0; i < moves.length; i++) {
+        const board = chess.board();
+        let qW = 0, qB = 0, ptsW = 0, ptsB = 0;
+        const pts = { n: 3, b: 3, r: 5, q: 9 };
+        for (const row of board) for (const sq of row) {
+          if (!sq || sq.type === 'p' || sq.type === 'k') continue;
+          if (sq.color === 'w') ptsW += pts[sq.type]; else ptsB += pts[sq.type];
+          if (sq.type === 'q') sq.color === 'w' ? qW++ : qB++;
+        }
+        const endgame = (qW === 0 && qB === 0) ||
+          (ptsW <= CONFIG.ENDGAME_NONPAWN_POINTS && ptsB <= CONFIG.ENDGAME_NONPAWN_POINTS);
+        phaseBefore.push(endgame ? 'endgame' : i < CONFIG.OPENING_EXIT_PLY ? 'opening' : 'middlegame');
+        legalMovesBefore.push(chess.moves().length);
+        try { chess.move(moves[i]); }
+        catch (err) { replayBroke = `ply ${i}: ${moves[i]}`; break; }
+      }
+
+      // Per-user-ply records
+      const sign = userIsWhite ? 1 : -1;
+      const userPlies = [];
+      for (let i = userIsWhite ? 0 : 1; i < moves.length; i += 2) {
+        const before = evalBefore(i), after = evalAfter[i];
+        if (before == null || after == null) continue;
+        const swing = sign * before - sign * after; // cp lost by the user on this move
+        userPlies.push({
+          ply: i,
+          swing,
+          cpl: Math.max(0, swing),
+          evalBeforeWhitePov: before,
+          inSanityWindow: Math.abs(before) <= CONFIG.SANITY_WINDOW_CP,
+          equalish: Math.abs(before) <= CONFIG.EQUALISH_CP,
+          phase: phaseBefore[i] ?? null,
+          legalMoves: legalMovesBefore[i] ?? null,
+          remainingBeforeCs: clockBefore(i),
+          spentCs: timeSpentCs(i),
+        });
+      }
+
+      const isBlunder = p => p.inSanityWindow && p.swing >= CONFIG.BLUNDER_SWING_CP;
+
+      // Winning position: user POV eval >= threshold sustained N consecutive plies
+      const povEvals = evalAfter.map(e => e == null ? null : sign * e);
+      let reachedWinning = false;
+      for (let i = 0; i + CONFIG.WINNING_SUSTAIN_PLIES - 1 < povEvals.length; i++) {
+        let ok = true;
+        for (let k = 0; k < CONFIG.WINNING_SUSTAIN_PLIES; k++) {
+          if (povEvals[i + k] == null || povEvals[i + k] < CONFIG.WINNING_CP) { ok = false; break; }
+        }
+        if (ok) { reachedWinning = true; break; }
+      }
+
+      // Endgame entry: first ply whose position is an endgame; eval going in
+      const entryPly = phaseBefore.findIndex(ph => ph === 'endgame');
+      const endgameEntryEvalPov = entryPly >= 0 && evalBefore(entryPly) != null ? sign * evalBefore(entryPly) : null;
+
+      // Opening exit eval (user POV) at ply 24, or final eval if shorter
+      const exitIdx = Math.min(CONFIG.OPENING_EXIT_PLY, moves.length) - 1;
+      let openingExitEvalPov = null;
+      for (let i = exitIdx; i >= 0; i--) if (evalAfter[i] != null) { openingExitEvalPov = sign * evalAfter[i]; break; }
+      const openingFamily = (g.opening?.name || 'Unknown').split(':')[0].trim();
+
+      return {
+        id: g.id, speed: g.speed, result, status: g.status,
+        rating: g.players[userIsWhite ? 'white' : 'black'].rating,
+        lichessAcpl: g.players[userIsWhite ? 'white' : 'black'].analysis?.acpl ?? null,
+        userPlies, isBlunder, replayBroke,
+        reachedWinning, endgameEntryEvalPov,
+        openingFamily, openingExitEvalPov,
+        initialCs,
+      };
+    }
+
+    // ------------------------------------------------------------------
+    // Aggregate the five category metrics (spec section 3)
+    // ------------------------------------------------------------------
+    function aggregate(records) {
+      const n = records.length;
+      const all = records.flatMap(r => r.userPlies.map(p => ({ ...p, rec: r })));
+      const blunders = all.filter(p => p.rec.isBlunder(p));
+      const avg = xs => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+
+      // CAT 1 — tactics
+      const equalBlunders = blunders.filter(p => p.equalish);
+      const missedWins = all.filter(p => p.inSanityWindow && p.swing >= CONFIG.MISSED_WIN_GAIN_CP);
+
+      // CAT 2 — endgame
+      const egPlies = all.filter(p => p.phase === 'endgame');
+      const mgPlies = all.filter(p => p.phase === 'middlegame');
+      const egAcpl = avg(egPlies.map(p => p.cpl));
+      const mgAcpl = avg(mgPlies.map(p => p.cpl));
+      const goodEntries = records.filter(r => r.endgameEntryEvalPov != null && r.endgameEntryEvalPov >= CONFIG.ENDGAME_GOOD_ENTRY_CP);
+      const goodEntriesSpoiled = goodEntries.filter(r => r.result !== 'win');
+
+      // CAT 3 — conversion
+      const winningGames = records.filter(r => r.reachedWinning);
+      const notConverted = winningGames.filter(r => r.result !== 'win');
+
+      // CAT 4 — openings
+      const families = {};
+      for (const r of records) {
+        (families[r.openingFamily] ??= { games: 0, exitEvals: [] }).games++;
+        if (r.openingExitEvalPov != null) families[r.openingFamily].exitEvals.push(r.openingExitEvalPov);
+      }
+      const familyRows = Object.entries(families)
+        .map(([name, f]) => ({
+          family: name, games: f.games,
+          avgExitEvalCp: avg(f.exitEvals) != null ? Math.round(avg(f.exitEvals)) : null,
+          disasters: f.exitEvals.filter(e => e <= CONFIG.DISASTER_EVAL_CP).length,
+        }))
+        .sort((a, b) => b.games - a.games);
+      const recurringDisasters = familyRows.filter(f => f.disasters >= CONFIG.DISASTER_MIN_COUNT);
+
+      // CAT 5 — time
+      const losses = records.filter(r => r.result === 'loss');
+      const timeLosses = losses.filter(r => r.status === 'outoftime');
+      const lowTime = p => p.remainingBeforeCs != null &&
+        (p.remainingBeforeCs < CONFIG.LOW_TIME_SECONDS * 100 ||
+         (p.rec.initialCs > 0 && p.remainingBeforeCs < CONFIG.LOW_TIME_FRACTION * p.rec.initialCs));
+      const lowTimeBlunders = blunders.filter(lowTime);
+      const snapBlunders = blunders.filter(p =>
+        p.spentCs != null && p.spentCs < CONFIG.SNAP_MOVE_SECONDS * 100 &&
+        p.legalMoves != null && p.legalMoves > 1);
+
+      // Sanity cross-check: our per-game ACPL vs the acpl Lichess itself reports
+      const acplDiffs = records
+        .filter(r => r.lichessAcpl != null && r.userPlies.length > 0)
+        .map(r => Math.abs(avg(r.userPlies.map(p => p.cpl)) - r.lichessAcpl));
+
+      return {
+        n,
+        speeds: records.reduce((m, r) => (m[r.speed] = (m[r.speed] ?? 0) + 1, m), {}),
+        results: records.reduce((m, r) => (m[r.result] = (m[r.result] ?? 0) + 1, m), {}),
+        ratingMin: Math.min(...records.map(r => r.rating)),
+        ratingMax: Math.max(...records.map(r => r.rating)),
+        replayBroken: records.filter(r => r.replayBroke).length,
+        acplSanityMeanAbsDiff: avg(acplDiffs),
+        cat1: {
+          equalPositionBlundersPerGame: equalBlunders.length / n,
+          equalPositionBlundersTotal: equalBlunders.length,
+          missedWinsPerGame: missedWins.length / n,
+          missedWinsTotal: missedWins.length,
+          blundersTotalAnyPosition: blunders.length,
+        },
+        cat2: {
+          endgameAcpl: egAcpl, middlegameAcpl: mgAcpl,
+          endgameVsMiddlegameGapCp: egAcpl != null && mgAcpl != null ? egAcpl - mgAcpl : null,
+          endgamePlies: egPlies.length, middlegamePlies: mgPlies.length,
+          goodEndgameEntries: goodEntries.length,
+          goodEntriesNotWon: goodEntriesSpoiled.length,
+        },
+        cat3: {
+          gamesReachedWinning: winningGames.length,
+          winningNotWon: notConverted.length,
+          conversionFailureShare: winningGames.length ? notConverted.length / winningGames.length : null,
+        },
+        cat4: {
+          distinctFamilies: familyRows.length,
+          familyRows,
+          recurringDisasters,
+        },
+        cat5: {
+          losses: losses.length,
+          lossesOnTime: timeLosses.length,
+          lossesOnTimeShare: losses.length ? timeLosses.length / losses.length : null,
+          blundersTotal: blunders.length,
+          lowTimeBlunders: lowTimeBlunders.length,
+          lowTimeBlunderShare: blunders.length ? lowTimeBlunders.length / blunders.length : null,
+          snapBlunders: snapBlunders.length,
+        },
+      };
+    }
+
+    // ------------------------------------------------------------------
+    // Console report
+    // ------------------------------------------------------------------
+    const pct = x => x == null ? 'n/a' : (100 * x).toFixed(0) + '%';
+    const num = (x, d = 2) => x == null ? 'n/a' : x.toFixed(d);
+
+    function report(username, a) {
+      console.log(`\n=== CHESS CHECKUP — ${username} — ${a.n} analyzed rated games ===`);
+      console.log(`Sample: ${JSON.stringify(a.speeds)} | results: ${JSON.stringify(a.results)} | rating ${a.ratingMin}–${a.ratingMax}`);
+      console.log(`Pipeline sanity: mean |our ACPL − Lichess acpl| = ${num(a.acplSanityMeanAbsDiff, 1)} cp` +
+        (a.replayBroken ? ` | WARNING: ${a.replayBroken} games failed move replay` : ''));
+
+      console.log(`\n— 1. TACTICAL SAFETY —`);
+      console.log(`  A. Blunders (≥${CONFIG.BLUNDER_SWING_CP}cp swing) in roughly equal positions: ` +
+        `${num(a.cat1.equalPositionBlundersPerGame)} per game (${a.cat1.equalPositionBlundersTotal} total)`);
+      console.log(`  B. Missed wins (best move ≥${CONFIG.MISSED_WIN_GAIN_CP}cp better than yours): ` +
+        `${num(a.cat1.missedWinsPerGame)} per game (${a.cat1.missedWinsTotal} total)`);
+      console.log(`  (All blunders, any position inside ±${CONFIG.SANITY_WINDOW_CP}cp: ${a.cat1.blundersTotalAnyPosition})`);
+
+      console.log(`\n— 2. ENDGAME TECHNIQUE —`);
+      console.log(`  A. Avg centipawn loss: endgame ${num(a.cat2.endgameAcpl, 1)} vs middlegame ${num(a.cat2.middlegameAcpl, 1)} ` +
+        `(gap ${num(a.cat2.endgameVsMiddlegameGapCp, 1)}cp; ${a.cat2.endgamePlies} endgame / ${a.cat2.middlegamePlies} middlegame moves)`);
+      console.log(`  B. Entered endgame at +${CONFIG.ENDGAME_GOOD_ENTRY_CP}cp or better: ${a.cat2.goodEndgameEntries} games, ` +
+        `of which not won: ${a.cat2.goodEntriesNotWon}`);
+
+      console.log(`\n— 3. HOLDING A WINNING POSITION —`);
+      console.log(`  Reached winning (≥+${CONFIG.WINNING_CP}cp for ${CONFIG.WINNING_SUSTAIN_PLIES} plies): ${a.cat3.gamesReachedWinning} games`);
+      console.log(`  Did not win: ${a.cat3.winningNotWon} (${pct(a.cat3.conversionFailureShare)} conversion failure)`);
+
+      console.log(`\n— 4. OPENING RELIABILITY —`);
+      console.log(`  C. Distinct opening families in sample: ${a.cat4.distinctFamilies}`);
+      console.table(a.cat4.familyRows.filter(f => f.games >= 2));
+      console.log(`  (families seen once: ${a.cat4.familyRows.filter(f => f.games === 1).length})`);
+      if (a.cat4.recurringDisasters.length)
+        console.log(`  B. RECURRING DISASTERS (≥${CONFIG.DISASTER_MIN_COUNT} games at ≤${CONFIG.DISASTER_EVAL_CP}cp by move ${CONFIG.OPENING_EXIT_PLY / 2}):`,
+          a.cat4.recurringDisasters.map(f => `${f.family} (${f.disasters}/${f.games})`).join(', '));
+      else
+        console.log(`  B. No recurring opening disasters.`);
+
+      console.log(`\n— 5. TIME AND DECISION PROCESS —`);
+      console.log(`  A. Losses on time: ${a.cat5.lossesOnTime} of ${a.cat5.losses} losses (${pct(a.cat5.lossesOnTimeShare)})`);
+      console.log(`  B. Blunders under low time (<${CONFIG.LOW_TIME_SECONDS}s or <${CONFIG.LOW_TIME_FRACTION * 100}% of start): ` +
+        `${a.cat5.lowTimeBlunders} of ${a.cat5.blundersTotal} (${pct(a.cat5.lowTimeBlunderShare)})`);
+      console.log(`  C. Snap-move blunders (<${CONFIG.SNAP_MOVE_SECONDS}s thought, position not forced): ${a.cat5.snapBlunders}`);
+      console.log(`\n=== end ===`);
+    }
+
+    // ------------------------------------------------------------------
+    // Wiring
+    // ------------------------------------------------------------------
+    const statusEl = document.getElementById('status');
+    const setStatus = s => { statusEl.textContent = s; };
+
+    async function run() {
+      const username = document.getElementById('username').value.trim();
+      if (!username) return setStatus('Enter a username.');
+      try {
+        setStatus(`Fetching up to ${CONFIG.MAX_GAMES} analyzed rapid/classical games for ${username}…`);
+        const games = await fetchGames(username);
+        setStatus(`Fetched ${games.length} games. Parsing…`);
+        const userId = username.toLowerCase();
+        const records = games.map(g => analyzeGame(g, userId)).filter(Boolean);
+        if (records.length < CONFIG.MIN_GAMES) {
+          setStatus(`Only ${records.length} usable analyzed games — below the minimum of ${CONFIG.MIN_GAMES}. ` +
+            `Refusing to diagnose (spec rule). Request analysis on more of your games on Lichess, then retry.`);
+          return;
+        }
+        const agg = aggregate(records);
+        report(username, agg);
+        setStatus(`Done: ${records.length} games analyzed. Open the browser console for the five category metrics.`);
+      } catch (err) {
+        console.error(err);
+        setStatus(`Error: ${err.message}`);
+      }
+    }
+
+    document.getElementById('run').addEventListener('click', run);
+    run(); // auto-run for session-1 testing
+  </script>
+</body>
+</html>
