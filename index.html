@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Chess Checkup — find the one weakness costing you the most rating</title>
-  <meta name="description" content="Free tool: enter your Lichess username and Chess Checkup reads your analyzed rapid & classical games, names the one weakness costing you the most rating, shows the evidence, and gives one honest fix. No signup, no ads, no sponsors.">
-  <meta name="theme-color" content="#2b6cb0">
-  <!-- Content Security Policy: allow the chess.js CDN module + Lichess API only -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; connect-src https://lichess.org https://cdn.jsdelivr.net; img-src 'self' data:; base-uri 'none'">
+  <title>Chess Checkup: the one weakness costing you the most rating</title>
+  <meta name="description" content="Free tool. Enter your Lichess username and Chess Checkup reads your analyzed rapid and classical games, names the one weakness costing you the most rating, shows the evidence, and gives one honest fix. No signup, no ads, no sponsors.">
+  <meta name="theme-color" content="#f4f1e9">
+  <!-- Content Security Policy: chess.js CDN module, Google Fonts, and the Lichess API only -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://lichess.org https://cdn.jsdelivr.net; img-src 'self' data:; base-uri 'none'">
   <!-- Open Graph / Twitter: link previews when shared on Reddit, etc. -->
   <meta property="og:type" content="website">
   <meta property="og:title" content="Chess Checkup">
@@ -15,91 +15,161 @@
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="Chess Checkup">
   <meta name="twitter:description" content="The one weakness costing you the most rating, with the evidence and one honest fix. Free, no signup.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
   <style>
-    :root { --ink:#1a1a1a; --muted:#5f6368; --line:#e3e3e3; --bg:#fafafa; --accent:#2b6cb0; --warn:#b7791f; --good:#2f855a; --softblue:#f5f9ff; }
+    :root {
+      --paper:#f4f1e9;
+      --panel:#efe9db;
+      --ink:#1c1813;
+      --soft:#5d564a;
+      --rule:#d8cfbb;
+      --accent:#8a2a20;
+      --serif:'Newsreader', Georgia, 'Times New Roman', serif;
+      --mono:'DM Mono', 'SFMono-Regular', Menlo, monospace;
+    }
     * { box-sizing: border-box; }
-    body { font-family: system-ui, -apple-system, sans-serif; color: var(--ink); background: var(--bg); max-width: 680px; margin: 2.5rem auto; padding: 0 1rem 3rem; line-height: 1.55; color-scheme: light; }
-    h1 { margin-bottom: .25rem; font-size: 1.9rem; }
-    .tagline { color: var(--muted); margin-top: 0; }
-    .controls { display: flex; gap: .5rem; margin: 1.25rem 0 .4rem; }
-    input { font-size: 1rem; padding: .55rem .6rem; flex: 1; min-width: 0; border: 1px solid #c9c9c9; border-radius: 8px; }
-    input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
-    button { font-size: 1rem; padding: .55rem 1.1rem; border: 0; border-radius: 8px; background: var(--ink); color: #fff; cursor: pointer; white-space: nowrap; }
-    button:disabled { opacity: .5; cursor: default; }
-    .hint { color: var(--muted); font-size: .85rem; margin: .2rem 0 0; }
-    #status { color: var(--muted); font-size: .9rem; min-height: 1.2em; margin-top: .6rem; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0; background: var(--paper); color: var(--ink);
+      font-family: var(--serif); font-size: 18px; line-height: 1.6;
+      color-scheme: light;
+    }
+    main { max-width: 660px; margin: 0 auto; padding: 3.5rem 1.5rem 4rem; }
+    p { margin: 0; overflow-wrap: break-word; }
+    strong { font-weight: 600; }
+    em { font-style: italic; }
+    a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; overflow-wrap: anywhere; }
+    a:hover { color: var(--ink); }
 
-    .sample { color: var(--muted); font-size: .9rem; margin: 1rem 0 .5rem; }
-    .card { border: 1px solid var(--line); border-radius: 10px; padding: 1.1rem 1.2rem; margin: .9rem 0; background: #fff; overflow-wrap: anywhere; }
-    .card.primary { border-color: var(--accent); border-left: 5px solid var(--accent); background: var(--softblue); }
-    .card.tie { border-color: var(--warn); border-left: 5px solid var(--warn); background: #fffaf0; }
-    .card.refuse, .card.clean, .card.error { border-left: 5px solid var(--muted); }
-    .card.error { border-left-color: var(--warn); background: #fffaf0; }
-    .card h2 { margin: .2rem 0 .5rem; font-size: 1.25rem; line-height: 1.3; }
-    .card h3 { margin: .1rem 0 .5rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
-    .kicker { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--accent); font-weight: 600; }
-    .card.tie .kicker { color: var(--warn); }
-    .conf { color: var(--muted); font-size: .9rem; margin-bottom: 0; }
-    .card.rec .fix { font-weight: 600; }
-    .lbl { color: var(--muted); font-weight: 600; }
-    .freeflag { color: var(--good); font-size: .9rem; }
-    .card a { color: var(--accent); text-decoration: none; }
-    .card a:hover { text-decoration: underline; }
-    ol.howto { margin: .5rem 0; padding-left: 1.3rem; }
-    ol.howto li { margin: .3rem 0; }
-    details.more, details.tech { margin-top: .6rem; }
-    details summary { cursor: pointer; color: var(--muted); font-size: .9rem; padding: .35rem 0; }
-    details.tech summary { font-weight: 600; }
-    details.tech { border-top: 1px solid var(--line); margin-top: 1.4rem; padding-top: .4rem; }
-    .techgrid { font-size: .85rem; }
-    .techrow { display: flex; justify-content: space-between; gap: 1rem; padding: .25rem 0; border-bottom: 1px dotted var(--line); }
-    .techrow span:last-child { font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
-    .techev { font-size: .82rem; color: var(--muted); margin: .35rem 0 .8rem; }
+    /* Masthead */
+    .eyebrow { font-family: var(--mono); font-size: .72rem; letter-spacing: .16em; text-transform: uppercase; color: var(--soft); margin: 0 0 1.1rem; }
+    h1 { font-weight: 500; font-size: 3rem; line-height: 1.0; letter-spacing: -.015em; margin: 0 0 .9rem; }
+    .lede { font-size: 1.18rem; line-height: 1.5; max-width: 34em; }
+    .aside { font-style: italic; color: var(--soft); font-size: 1.05rem; margin-top: 1rem; max-width: 34em; }
+    .masthead { padding-bottom: 1.9rem; border-bottom: 1px solid var(--rule); }
 
-    .rest { margin-top: 1.4rem; }
-    .rest > h3 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
-    .restrow { padding: .55rem 0; border-top: 1px solid var(--line); }
-    .resthead { display: flex; justify-content: space-between; align-items: baseline; gap: .8rem; }
-    .restname { font-weight: 600; }
-    .restscore { font-variant-numeric: tabular-nums; color: var(--muted); font-size: .9rem; }
-    .bar { height: 7px; background: var(--line); border-radius: 4px; margin: .35rem 0; overflow: hidden; }
-    .bar-fill { height: 100%; background: var(--accent); }
-    .restev { font-size: .92rem; margin: .25rem 0 0; }
-    .muted { color: var(--muted); }
+    /* Intake */
+    .intake { padding: 1.9rem 0; border-bottom: 1px solid var(--rule); }
+    .field-label { display: block; font-family: var(--mono); font-size: .7rem; letter-spacing: .16em; text-transform: uppercase; color: var(--soft); margin-bottom: .55rem; }
+    .intake-row { display: flex; gap: .8rem; align-items: stretch; }
+    #username { flex: 1; min-width: 0; font-family: var(--mono); font-size: 1rem; color: var(--ink); background: transparent; border: 0; border-bottom: 1.5px solid var(--ink); padding: .5rem .15rem; border-radius: 0; }
+    #username::placeholder { color: #aaa18c; }
+    #username:focus { outline: none; border-bottom-color: var(--accent); border-bottom-width: 2px; }
+    #run { font-family: var(--mono); font-size: .78rem; letter-spacing: .1em; text-transform: uppercase; background: var(--ink); color: var(--paper); border: 0; padding: .7rem 1.3rem; cursor: pointer; border-radius: 0; }
+    #run:hover { background: var(--accent); }
+    #run:disabled { opacity: .45; cursor: default; }
+    .hint { font-style: italic; color: var(--soft); font-size: .96rem; margin-top: .95rem; max-width: 34em; }
+    #status { font-family: var(--mono); font-size: .76rem; letter-spacing: .02em; color: var(--soft); margin-top: .85rem; min-height: 1.1em; }
 
-    .disclosure { color: var(--muted); font-size: .8rem; margin-top: 1.5rem; }
-    .sitefoot { color: var(--muted); font-size: .85rem; border-top: 1px solid var(--line); margin-top: 1.8rem; padding-top: .9rem; }
+    /* Specimen line + section labels */
+    .specimen { font-family: var(--mono); font-size: .74rem; color: var(--soft); margin-top: 2rem; }
+    .specimen .tag { letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+    .kicker { font-family: var(--mono); font-size: .7rem; letter-spacing: .16em; text-transform: uppercase; color: var(--soft); margin: 0 0 .55rem; }
+
+    .card h2 { font-weight: 500; font-size: 1.75rem; line-height: 1.2; letter-spacing: -.01em; margin: 0 0 .7rem; }
+    .card p { font-size: 1.12rem; margin-top: .6rem; }
+    .card p:first-of-type { margin-top: 0; }
+
+    /* Primary diagnosis: the boxed finding */
+    .primary { margin-top: 1.5rem; padding: 1.6rem 1.7rem; background: var(--panel); border: 1px solid var(--ink); border-left: 4px solid var(--accent); }
+    .primary .kicker { color: var(--accent); }
+    .conf { font-size: .98rem; color: var(--soft); margin-top: 1.1rem; }
+    .conf strong { color: var(--ink); font-weight: 600; }
+
+    /* Prescription + sub-sections: ruled, not boxed */
+    .rec { padding: 1.5rem 0 .3rem; border-top: 1px solid var(--rule); margin-top: 1.4rem; }
+    .sub { padding: 1.5rem 0 0; border-top: 1px solid var(--rule); margin-top: 1.4rem; }
+    .fix { font-size: 1.16rem; font-weight: 500; }
+    .why { margin-top: .8rem; }
+    .why .lbl { font-family: var(--mono); font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--soft); margin-right: .5em; }
+    .freeflag { font-style: italic; color: var(--soft); font-size: 1rem; margin-top: .8rem; }
+    .rec .link { margin-top: .85rem; }
+
+    details.more { margin-top: .9rem; border-top: 1px dotted var(--rule); padding-top: .3rem; }
+    details summary { list-style: none; cursor: pointer; font-family: var(--mono); font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; color: var(--soft); padding: .45rem 0; }
+    details summary::-webkit-details-marker { display: none; }
+    details > summary::before { content: '+ '; }
+    details[open] > summary::before { content: '\2212 '; }
+    details.more p { font-size: 1rem; margin-top: .5rem; }
+
+    /* The rest, ranked */
+    .rest { margin-top: 1.9rem; }
+    .rest-label { font-family: var(--mono); font-size: .7rem; letter-spacing: .16em; text-transform: uppercase; color: var(--soft); padding-bottom: .55rem; border-bottom: 1px solid var(--ink); }
+    .restrow { padding: .9rem 0; border-bottom: 1px solid var(--rule); }
+    .resthead { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+    .restname { font-weight: 500; font-size: 1.12rem; }
+    .restscore { font-family: var(--mono); font-size: .82rem; color: var(--soft); font-variant-numeric: tabular-nums; }
+    .bar { height: 3px; background: var(--rule); margin: .6rem 0 .55rem; }
+    .bar-fill { height: 100%; background: var(--ink); }
+    .restev { font-size: 1.02rem; margin-top: .3rem; }
+    .restev.muted { color: var(--soft); font-style: italic; }
+
+    /* Exact numbers (clinical appendix, all mono) */
+    details.tech { margin-top: 2rem; border-top: 1px solid var(--ink); padding-top: .3rem; }
+    .techgrid { margin-top: .6rem; }
+    .techrow { display: flex; justify-content: space-between; gap: 1rem; padding: .4rem 0; border-bottom: 1px dotted var(--rule); font-family: var(--mono); font-size: .78rem; }
+    .techrow strong { font-weight: 500; }
+    .techrow span:last-child { color: var(--soft); white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .techev { font-family: var(--mono); font-size: .73rem; line-height: 1.55; color: var(--soft); margin: .4rem 0 .95rem; }
+
+    /* Error / refuse / clean callouts */
+    .error, .refuse, .clean { margin-top: 1.5rem; padding: 1.5rem 1.7rem; border: 1px solid var(--ink); }
+    .error { border-left: 4px solid var(--accent); }
+    .refuse, .clean { border-left: 4px solid var(--soft); }
+    .error p, .refuse p, .clean p { font-size: 1.08rem; }
+    ol.howto { margin: 1rem 0 0; padding-left: 1.3rem; }
+    ol.howto li { margin: .5rem 0; font-size: 1.05rem; }
+
+    .disclosure { font-style: italic; color: var(--soft); font-size: .92rem; line-height: 1.5; margin-top: 1.9rem; }
+    .sitefoot { font-family: var(--mono); font-size: .72rem; letter-spacing: .03em; line-height: 1.6; color: var(--soft); border-top: 1px solid var(--rule); margin-top: 2.6rem; padding-top: 1rem; }
 
     @media (max-width: 560px) {
-      body { margin: 1.25rem auto; padding: 0 .85rem 2.5rem; line-height: 1.5; }
-      h1 { font-size: 1.5rem; }
-      .controls { flex-direction: column; gap: .55rem; }
-      .controls button { width: 100%; padding: .8rem; font-size: 1.05rem; }
-      input { padding: .7rem .65rem; font-size: 1.05rem; }
-      .card { padding: 1rem; }
-      .card h2 { font-size: 1.15rem; }
-      details summary { padding: .55rem 0; }
-      .card a { display: inline-block; padding: .15rem 0; }
+      body { font-size: 17px; }
+      main { padding: 2.3rem 1.15rem 3rem; }
+      h1 { font-size: 2.1rem; }
+      .lede { font-size: 1.08rem; }
+      .aside, .hint { font-size: 1rem; }
+      .intake-row { flex-direction: column; gap: .7rem; }
+      #username { font-size: 16px; padding: .65rem .15rem; }
+      #run { width: 100%; padding: .9rem; font-size: .82rem; }
+      .card h2 { font-size: 1.42rem; }
+      .primary, .error, .refuse, .clean { padding: 1.2rem 1.2rem; }
+      .fix { font-size: 1.1rem; }
+      .card p, .restev { font-size: 1.05rem; }
     }
   </style>
 </head>
 <body>
-  <h1>Chess Checkup</h1>
-  <p class="tagline">Enter your Lichess username. We read your analyzed rapid &amp; classical games and name the one weakness costing you the most rating — with the evidence, and one honest fix.</p>
-  <div class="controls">
-    <input id="username" aria-label="Lichess username" placeholder="Your Lichess username" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go">
-    <button id="run">Run checkup</button>
-  </div>
-  <p class="hint">Free. No signup, no ads. Your games need a Lichess computer analysis — most slow games have one, and it's free to add.</p>
-  <div id="status"></div>
-  <div id="results"></div>
-  <footer class="sitefoot">Recommendations are never sponsored. If we ever add affiliate links, we'll say so right here.</footer>
+  <main>
+    <header class="masthead">
+      <p class="eyebrow">A checkup for the 1000 to 1800 improver</p>
+      <h1>Chess Checkup</h1>
+      <p class="lede">Type in your Lichess username. This reads your analyzed rapid and classical games and tells you the single weakness costing you the most rating, with the evidence behind it and one honest thing to do about it.</p>
+      <p class="aside">Two of the five things it can diagnose tell you to buy nothing at all. I would rather lose a book sale than point you at a problem you do not actually have.</p>
+    </header>
+
+    <section class="intake" aria-label="Run a checkup">
+      <label class="field-label" for="username">Lichess username</label>
+      <div class="intake-row">
+        <input id="username" placeholder="username" aria-label="Lichess username" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go">
+        <button id="run">Run the checkup</button>
+      </div>
+      <p class="hint">It only reads your slow games, on purpose. Bullet mostly measures who panics faster, which is not the thing worth fixing.</p>
+      <p id="status" role="status"></p>
+    </section>
+
+    <div id="results"></div>
+
+    <footer class="sitefoot">Nothing recommended here is sponsored or paid for, and no link sends us a cent. If that ever changes, this line is where you will read about it first.</footer>
+  </main>
 
   <script type="module">
     import { Chess } from 'https://cdn.jsdelivr.net/npm/chess.js@1.4.0/+esm';
 
     // ==================================================================
-    // CONFIG — every tunable pipeline constant lives here (spec section 3).
+    // CONFIG: every tunable pipeline constant lives here (spec section 3).
     // ==================================================================
     const CONFIG = {
       MAX_GAMES: 100,
@@ -133,7 +203,7 @@
     };
 
     // ==================================================================
-    // SCORE — tunable severity-scoring + ranking constants (see scoring-model.md).
+    // SCORE: tunable severity-scoring + ranking constants (see scoring-model.md).
     // ==================================================================
     const SCORE = {
       BAND: { cat1: 1.00, cat2: 0.80, cat3: 0.85, cat4: 0.75, cat5: 0.80 },
@@ -156,7 +226,7 @@
     //
     // NOTE on identification: Lichess's courtesy guidelines ask for a
     // descriptive User-Agent. Browsers FORBID setting User-Agent from
-    // fetch() (it's a forbidden header name), so a pure client-side app
+    // fetch() (it is a forbidden header name), so a pure client-side app
     // cannot send one. Instead Lichess identifies this app by the Origin
     // and Referer headers the browser sends automatically (the deploy
     // domain, e.g. chess-checkup.vercel.app). vercel.json sets a
@@ -489,8 +559,16 @@
     }
 
     // ==================================================================
-    // Category metadata + PLAIN-ENGLISH copy (spec §5, plus the owner's
-    // plain-language pass). Precise technical version lives in the
+    // Shared formatting helpers
+    // ==================================================================
+    const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const pct = x => x == null ? 'n/a' : (100 * x).toFixed(0) + '%';
+    const num = (x, d = 2) => x == null ? 'n/a' : x.toFixed(d);
+    const barHTML = s => `<div class="bar"><div class="bar-fill" style="width:${Math.round(clamp01(s) * 100)}%"></div></div>`;
+
+    // ==================================================================
+    // Category metadata + PLAIN-ENGLISH copy (spec section 5, plus the
+    // plain-language pass). The precise technical version lives in the
     // "exact numbers" expander, built by technicalEvidence().
     // ==================================================================
     const CATS = {
@@ -498,10 +576,10 @@
       cat2: { name: 'Endgame technique' },
       cat3: { name: 'Holding a winning position' },
       cat4: { name: 'Opening reliability' },
-      cat5: { name: 'Time & decision process' },
+      cat5: { name: 'Time and decision-making' },
     };
     const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
-    // Describes the AVERAGE rate (events per game) — NOT the fraction of games
+    // Describes the AVERAGE rate (events per game), NOT the fraction of games
     // affected. Equal-position blunders can cluster (several in one game), so a
     // per-game rate must be framed as a rate, not as a share of games.
     const aboutPerGame = x =>
@@ -510,161 +588,160 @@
       x >= 0.8 ? 'about one a game, on average' :
       `about one every ${Math.round(1 / x)} games, on average`;
 
-    // PLAIN evidence — no centipawns, no "acpl". This is what the user reads.
+    // PLAIN evidence: no centipawns, no "acpl". This is what the user reads.
     function evidencePlain(cat, agg, detail) {
       const a = agg;
       if (cat === 'cat1') {
         const eqT = a.cat1.equalPositionBlundersTotal, mwT = a.cat1.missedWinsTotal;
         const parts = [];
-        if (eqT > 0) parts.push(`you made ${plural(eqT, 'serious blunder', 'serious blunders')} while the game was still even — single moves that swung the position sharply toward your opponent (${aboutPerGame(a.cat1.equalPositionBlundersPerGame)})`);
-        if (mwT > 0) parts.push(`${plural(mwT, 'time', 'times')} you had a much stronger move available and gave away a big chunk of your advantage instead`);
-        return parts.length ? parts.join(', and ') : 'your tactical safety is holding up well';
+        if (eqT > 0) parts.push(`you made ${plural(eqT, 'serious blunder', 'serious blunders')} while the game was still even, single moves that swung it sharply toward your opponent (${aboutPerGame(a.cat1.equalPositionBlundersPerGame)})`);
+        if (mwT > 0) parts.push(`${plural(mwT, 'time', 'times')} you had a far stronger move available and gave away a big chunk of your advantage instead`);
+        return parts.length ? parts.join(', and ') : 'your tactics are holding up well';
       }
       if (cat === 'cat2') {
         const gap = a.cat2.endgameVsMiddlegameGapCp;
         const parts = [];
-        if (gap != null && gap > 0) parts.push('you play noticeably less accurately once the game simplifies into an endgame than you do earlier — more mistakes slip in after the queens come off');
-        if (a.cat2.goodEndgameEntries > 0 && a.cat2.goodEntriesNotWon > 0) parts.push(`${a.cat2.goodEntriesNotWon} of the ${a.cat2.goodEndgameEntries} endgames you reached with a clear advantage slipped to a draw or loss`);
-        return parts.length ? parts.join(', and ') : 'your endgame play is roughly as sharp as the rest of your game';
+        if (gap != null && gap > 0) parts.push('you play noticeably less accurately once the game simplifies into an endgame than you do earlier, with more mistakes slipping in after the queens come off');
+        if (a.cat2.goodEndgameEntries > 0 && a.cat2.goodEntriesNotWon > 0) parts.push(`${a.cat2.goodEntriesNotWon} of the ${a.cat2.goodEndgameEntries} endgames you reached with a clear advantage slipped to a draw or a loss`);
+        return parts.length ? parts.join(', and ') : 'your endgames are about as sharp as the rest of your game';
       }
       if (cat === 'cat3') {
         const won = a.cat3.gamesReachedWinning - a.cat3.winningNotWon;
-        return `you reached a clearly winning position in ${a.cat3.gamesReachedWinning} games but only finished the job in ${won} of them — ${plural(a.cat3.winningNotWon, 'game', 'games')} you had in the bag slipped away`;
+        return `you reached a clearly winning position in ${a.cat3.gamesReachedWinning} games but only finished the job in ${won} of them, so ${plural(a.cat3.winningNotWon, 'game', 'games')} you had in the bag slipped away`;
       }
       if (cat === 'cat4') {
         const f = detail.worstFamily;
-        if (f && !detail.scatterDriven) return `your ${f.family} keeps going wrong early — in ${f.disasters} of the ${f.games} games you played it, you were already worse by move 12. The same opening, the same trouble, again and again`;
-        return `you spread your ${a.n} games across ${a.cat4.distinctFamilies} different openings and never settled into any of them — picking one or two and sticking with them would help more than learning more`;
+        if (f && !detail.scatterDriven) return `your ${f.family} keeps going wrong early: in ${f.disasters} of the ${f.games} games you played it, you were already worse by move 12, the same opening failing the same way`;
+        return `you spread your ${a.n} games across ${a.cat4.distinctFamilies} different openings and never settled into any of them, and picking one or two to stick with would help more than learning new ones`;
       }
       if (cat === 'cat5') {
         const snapPct = a.cat5.blundersTotal ? Math.round(a.cat5.snapBlunders / a.cat5.blundersTotal * 100) : 0;
-        const bits = [`${snapPct}% of your blunders (${a.cat5.snapBlunders} of ${a.cat5.blundersTotal}) came on moves you played in under 10 seconds — snap decisions, not real thinking time`];
-        if (a.cat5.lossesOnTime > 0) bits.push(`${a.cat5.lossesOnTime} of your ${plural(a.cat5.losses, 'loss', 'losses')} were simply running out of time`);
+        const bits = [`${snapPct}% of your blunders (${a.cat5.snapBlunders} of ${a.cat5.blundersTotal}) came on moves you played in under 10 seconds, snap decisions rather than real thinking time`];
+        if (a.cat5.lossesOnTime > 0) bits.push(`${a.cat5.lossesOnTime} of your ${plural(a.cat5.losses, 'loss', 'losses')} were just running out of time`);
         bits.push(`${a.cat5.lowTimeBlunders} of those blunders came with under 20 seconds left on your clock`);
         return bits.join(', and ');
       }
     }
 
-    // PRECISE evidence — the technical version, shown only in the expander.
+    // PRECISE evidence: the technical version, shown only in the expander.
     function technicalEvidence(cat, agg, detail) {
       const a = agg;
-      if (cat === 'cat1') return `equal-position blunders (≥200cp swing): ${a.cat1.equalPositionBlundersPerGame.toFixed(2)}/game (${a.cat1.equalPositionBlundersTotal} total); missed wins (best ≥250cp better): ${a.cat1.missedWinsPerGame.toFixed(2)}/game (${a.cat1.missedWinsTotal} total).`;
-      if (cat === 'cat2') return `avg centipawn loss — endgame ${num(a.cat2.endgameAcpl, 1)} vs middlegame ${num(a.cat2.middlegameAcpl, 1)} (gap ${num(a.cat2.endgameVsMiddlegameGapCp, 1)}cp); good endgame entries spoiled: ${a.cat2.goodEntriesNotWon}/${a.cat2.goodEndgameEntries}.`;
-      if (cat === 'cat3') return `reached winning (≥+300cp, 2 plies) in ${a.cat3.gamesReachedWinning} games; not won ${a.cat3.winningNotWon} (${pct(a.cat3.conversionFailureShare)}). Scored relative to your own profile: z = ${num(detail.z, 2)}.`;
+      if (cat === 'cat1') return `equal-position blunders (200cp+ swing): ${a.cat1.equalPositionBlundersPerGame.toFixed(2)}/game (${a.cat1.equalPositionBlundersTotal} total); missed wins (best move 250cp+ better): ${a.cat1.missedWinsPerGame.toFixed(2)}/game (${a.cat1.missedWinsTotal} total).`;
+      if (cat === 'cat2') return `avg centipawn loss, endgame ${num(a.cat2.endgameAcpl, 1)} vs middlegame ${num(a.cat2.middlegameAcpl, 1)} (gap ${num(a.cat2.endgameVsMiddlegameGapCp, 1)}cp); good endgame entries spoiled: ${a.cat2.goodEntriesNotWon}/${a.cat2.goodEndgameEntries}.`;
+      if (cat === 'cat3') return `reached winning (+300cp, 2 plies) in ${a.cat3.gamesReachedWinning} games; not won ${a.cat3.winningNotWon} (${pct(a.cat3.conversionFailureShare)}). Scored relative to your own profile: z = ${num(detail.z, 2)}.`;
       if (cat === 'cat4') {
         const f = detail.worstFamily;
-        return `${a.cat4.distinctFamilies} distinct families. ${f ? `Worst recurring disaster: ${f.family} ${f.disasters}/${f.games} at ≤−100cp by move 12.` : 'No recurring disaster (≥3 games ≤−100cp).'}`;
+        return `${a.cat4.distinctFamilies} distinct families. ${f ? `Worst recurring disaster: ${f.family} ${f.disasters}/${f.games} at or below -100cp by move 12.` : 'No recurring disaster (3+ games at or below -100cp).'}`;
       }
       if (cat === 'cat5') return `losses on time: ${a.cat5.lossesOnTime}/${a.cat5.losses} (${pct(a.cat5.lossesOnTimeShare)}); low-time blunders: ${a.cat5.lowTimeBlunders}/${a.cat5.blundersTotal} (${pct(a.cat5.lowTimeBlunderShare)}); snap-move blunders: ${a.cat5.snapBlunders}.`;
     }
 
-    const confGloss = { high: 'high — based on enough games to trust this', medium: 'medium — a decent read; more analyzed games would sharpen it', low: 'low — an early hint; analyze more games to be sure' };
+    const confGloss = {
+      high: 'high, based on enough games to trust this',
+      medium: 'medium, a fair read that more analyzed games would sharpen',
+      low: 'low, an early hint; analyze more games to be sure',
+    };
 
     // ==================================================================
-    // Recommendation per category (spec §4). Free first whenever honestly best.
+    // Recommendation per category (spec section 4). Free first whenever honest.
     // ==================================================================
     function recommendation(cat, agg, sc) {
       const d = sc.detail;
       const cat5AlsoHigh = sc.scores.cat5 >= SCORE.NO_LEAK_FLOOR;
       const cat3AlsoHigh = sc.scores.cat3 >= SCORE.NO_LEAK_FLOOR;
       if (cat === 'cat1') return {
-        fix: 'A structured Lichess puzzle habit — 20 minutes a day, mixed themes, every puzzle solved slowly and fully before you move, and no streak-chasing.',
-        why: 'At your level, single careless moves cost more rating than anything else. Slowing down on puzzles rebuilds the habit of checking each move before you play it — which is exactly the habit that fails in your games.',
+        fix: 'Build a steady Lichess puzzle habit: 20 minutes a day, mixed themes, every puzzle solved slowly and all the way through before you move, and no streak-chasing.',
+        why: 'At your level, single careless moves cost more rating than anything else. Solving puzzles slowly rebuilds the habit of checking each move before you commit to it, which is the exact habit that keeps breaking down in your games.',
         free: true,
         link: { label: 'Start on Lichess puzzles (free)', url: 'https://lichess.org/training' },
         options: [
-          { label: 'The Woodpecker Method', note: 'Smith & Tikkanen, Quality Chess 2018 — you solve the same 1,100+ puzzles over and over, faster each round. About $27–32. A real grind; the free habit above is enough for most people.', url: 'https://www.amazon.com/s?k=Woodpecker+Method+Axel+Smith+Tikkanen' },
-          { label: '1001 Brilliant Ways to Checkmate (Reinfeld)', note: 'Cheap, old-school, and proven, if you want a book on paper.', url: 'https://www.amazon.com/s?k=Reinfeld+1001+Brilliant+Ways+to+Checkmate' },
+          { label: 'The Woodpecker Method', note: 'Smith and Tikkanen, Quality Chess 2018. You solve the same 1,100+ puzzles over and over, a little faster each pass. Around $27 to $32. It is a real grind, and the free habit above already covers most people.', url: 'https://www.amazon.com/s?k=Woodpecker+Method+Axel+Smith+Tikkanen' },
+          { label: '1001 Brilliant Ways to Checkmate (Reinfeld)', note: 'Cheap, old, and proven, if you would rather work from a book on paper.', url: 'https://www.amazon.com/s?k=Reinfeld+1001+Brilliant+Ways+to+Checkmate' },
         ],
       };
       if (cat === 'cat2') return {
         fix: "Silman's Complete Endgame Course.",
-        why: "It's split by rating level, so you read only the chapter for where you are and ignore the rest — which lines up exactly with how this tool sizes you up. Paperback or Kindle.",
+        why: 'It is split by rating level, so you read only the chapter for where you are now and skip the rest. That lines up neatly with how this tool sizes you up. Paperback or Kindle.',
         free: false,
         link: { label: "Silman's Complete Endgame Course", url: 'https://www.amazon.com/s?k=Silman+Complete+Endgame+Course' },
         options: agg.ratingMedian >= 1500 ? [
-          { label: '100 Endgames You Must Know', note: 'de la Villa — excellent, but the author himself calls it a second step, so come to it after Silman, not before. There’s a Chessable version if you like flashcard-style drilling.', url: 'https://www.amazon.com/s?k=100+Endgames+You+Must+Know+de+la+Villa' },
+          { label: '100 Endgames You Must Know', note: 'de la Villa. Excellent, but the author himself frames it as a second step, so come to it after Silman rather than before. There is a Chessable version if you prefer flashcard-style drilling.', url: 'https://www.amazon.com/s?k=100+Endgames+You+Must+Know+de+la+Villa' },
         ] : [],
       };
       if (cat === 'cat3') return {
-        fix: "A simple habit, nothing to buy: the moment you see you're winning, stop and take a full minute. Ask what your opponent's one trick could be, trade pieces (not pawns) to kill their chances, and stop hunting for a flashy finish.",
-        why: "Won games get thrown away by rushing and showing off, not by missing knowledge. A deliberate pause is what actually closes them out.",
+        fix: "A habit, nothing to buy. The moment you see you are winning, stop and take a full minute. Ask what your opponent's one trick could be, trade pieces (not pawns) to kill their chances, and stop hunting for a flashy finish.",
+        why: 'Won games get thrown away by rushing and showing off, not by missing knowledge. A deliberate pause is what actually closes them out.',
         free: true,
         link: null,
         options: [
-          { label: 'A Guide to Chess Improvement (Best of Novice Nook)', note: `Heisman — covers exactly this: keeping a won game won${cat5AlsoHigh ? ", and it also covers your time-management leak, so one book handles both" : ''}. Optional only — the free habit above is the real fix.`, url: 'https://www.amazon.com/s?k=Heisman+Guide+to+Chess+Improvement+Novice+Nook' },
+          { label: 'A Guide to Chess Improvement (Best of Novice Nook)', note: `Heisman. It covers exactly this, keeping a won game won${cat5AlsoHigh ? ', and it doubles as a fix for your time trouble, so one book handles both' : ''}. Optional only; the free habit above is the real fix.`, url: 'https://www.amazon.com/s?k=Heisman+Guide+to+Chess+Improvement+Novice+Nook' },
         ],
       };
       if (cat === 'cat4') {
         const f = d.worstFamily;
         if (f && !d.scatterDriven) return {
-          fix: `Don't rebuild your whole opening — just fix the one that keeps failing. Pick a single solid line in the ${f.family} and drill only that, using a free Chessable "Short & Sweet" course (10–30 lines, often with video).`,
-          why: `The problem is narrow: the ${f.family} went wrong in ${f.disasters} of your ${f.games} games with it. Fixing that one opening removes most of the damage — there's no need to study openings in general.`,
+          fix: `Do not rebuild your whole opening, just fix the one that keeps failing. Pick a single solid line in the ${f.family} and drill only that, using a free Chessable "Short & Sweet" course (10 to 30 lines, often with video).`,
+          why: `The problem is narrow: the ${f.family} went wrong in ${f.disasters} of your ${f.games} games with it. Fixing that one opening removes most of the damage, and there is no need to study openings in general.`,
           free: true,
           link: { label: `Free Short & Sweet for the ${f.family}`, url: `https://www.chessable.com/courses/?q=${encodeURIComponent(f.family + ' short and sweet')}` },
           options: [],
         };
         return {
-          fix: 'Study openings less, not more — pick one opening for White and one for Black and stick with them. Try a free Chessable "Short & Sweet" course for your most-played first move before you commit to anything bigger.',
-          why: `You're jumping between ${agg.cat4.distinctFamilies} different openings and never get comfortable in any of them. Narrowing down does more for you than any new book.`,
+          fix: 'Study openings less, not more. Pick one for White and one for Black and stick with them. Try a free Chessable "Short & Sweet" course for your most-played first move before you commit to anything bigger.',
+          why: `You are jumping between ${agg.cat4.distinctFamilies} different openings and never getting comfortable in any of them. Narrowing down helps you more than any new book.`,
           free: true,
           link: { label: 'Browse free Short & Sweet courses', url: 'https://www.chessable.com/courses/?q=short+and+sweet' },
           options: [
-            { label: 'Discovering Chess Openings', note: 'Emms, about $15 — teaches the ideas behind openings (develop, grab the center, keep your king safe) instead of lines to memorize. Good precisely because it talks you out of cramming theory.', url: 'https://www.amazon.com/s?k=Discovering+Chess+Openings+Emms' },
+            { label: 'Discovering Chess Openings', note: 'Emms, around $15. It teaches the ideas behind openings (develop, take the center, keep your king safe) instead of lines to memorize, and it is good precisely because it talks you out of cramming theory.', url: 'https://www.amazon.com/s?k=Discovering+Chess+Openings+Emms' },
           ],
         };
       }
       if (cat === 'cat5') return {
-        fix: "A simple habit, nothing to buy: decide roughly how much time each phase of the game gets, and before every move run a quick check — what does this move leave undefended, and what are my opponent's checks, captures, and threats? After any game you lose on time, look back at where the time actually went.",
-        why: "Most of these losses are habit, not knowledge — a fixed pre-move check and a bit of clock discipline are what stop the snap blunders and the flag-falls.",
+        fix: "A habit, nothing to buy. Decide roughly how much time each phase of the game gets, and before every move run one quick check: what does this move leave undefended, and what are my opponent's checks, captures, and threats? After any game you lose on time, look back at where the time actually went.",
+        why: 'Most of these losses are habit, not knowledge. A fixed pre-move check and a little clock discipline are what stop the snap blunders and the flag-falls.',
         free: true,
         link: null,
         options: [
-          { label: 'A Guide to Chess Improvement (Best of Novice Nook)', note: `Heisman — time management is one of its main topics${cat3AlsoHigh ? ", and it also covers your trouble closing out won games, so one book handles both" : ''}. Optional only — the free habit above is the real fix.`, url: 'https://www.amazon.com/s?k=Heisman+Guide+to+Chess+Improvement+Novice+Nook' },
+          { label: 'A Guide to Chess Improvement (Best of Novice Nook)', note: `Heisman. Time management is one of its main subjects${cat3AlsoHigh ? ', and it doubles as a fix for closing out won games, so one book handles both' : ''}. Optional only; the free habit above is the real fix.`, url: 'https://www.amazon.com/s?k=Heisman+Guide+to+Chess+Improvement+Novice+Nook' },
         ],
       };
     }
 
     // ==================================================================
-    // Render — real HTML cards (spec section 5), plain language
+    // Render: real HTML, diagnostic-report layout (spec section 5)
     // ==================================================================
-    const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    const pct = x => x == null ? 'n/a' : (100 * x).toFixed(0) + '%';
-    const num = (x, d = 2) => x == null ? 'n/a' : x.toFixed(d);
-    const barHTML = s => `<div class="bar"><div class="bar-fill" style="width:${Math.round(clamp01(s) * 100)}%"></div></div>`;
-
     function diagnosisCardHTML(cat, agg, sc) {
       return `<article class="card primary">
-        <div class="kicker">Your biggest leak</div>
+        <p class="kicker">Primary diagnosis</p>
         <h2>Your number one leak: ${esc(CATS[cat].name)}.</h2>
-        <p>In your last ${agg.n} analyzed games, ${esc(evidencePlain(cat, agg, sc.detail))}. Players at your level usually gain more rating by fixing this than anything else.</p>
+        <p>In your last ${agg.n} analyzed games, ${esc(evidencePlain(cat, agg, sc.detail))}. Players at your level usually gain more rating fixing this than anything else.</p>
         <p class="conf">Confidence: <strong>${esc(confGloss[sc.clabel] || sc.clabel)}</strong> (${agg.n} games).</p>
       </article>`;
     }
 
     function recCardHTML(cat, agg, sc) {
       const r = recommendation(cat, agg, sc);
-      let html = `<article class="card rec"><h3>The fix</h3><p class="fix">${esc(r.fix)}</p>`;
-      html += `<p><span class="lbl">Why this one:</span> ${esc(r.why)}</p>`;
-      if (r.free) html += `<p class="freeflag">This fix is free — shown first because it's honestly the best path for most players.</p>`;
-      if (r.link) html += `<p><a href="${esc(r.link.url)}" target="_blank" rel="noopener">${esc(r.link.label)} ↗</a></p>`;
+      let html = `<section class="card rec"><p class="kicker">Prescription</p><p class="fix">${esc(r.fix)}</p>`;
+      html += `<p class="why"><span class="lbl">Why this one</span>${esc(r.why)}</p>`;
+      if (r.free) html += `<p class="freeflag">It is free, and it comes first because for most people that is honestly the best fix.</p>`;
+      if (r.link) html += `<p class="link"><a href="${esc(r.link.url)}" target="_blank" rel="noopener">${esc(r.link.label)}</a></p>`;
       if (r.options && r.options.length) {
-        html += `<details class="more"><summary>${r.free ? 'Optional — only if you want to spend money' : 'Also worth knowing'}</summary>`;
-        for (const o of r.options) html += `<p><a href="${esc(o.url)}" target="_blank" rel="noopener">${esc(o.label)} ↗</a> — ${esc(o.note)}</p>`;
+        html += `<details class="more"><summary>${r.free ? 'If you would rather spend money' : 'Also worth knowing'}</summary>`;
+        for (const o of r.options) html += `<p><a href="${esc(o.url)}" target="_blank" rel="noopener">${esc(o.label)}</a>. ${esc(o.note)}</p>`;
         html += `</details>`;
       }
-      return html + `</article>`;
+      return html + `</section>`;
     }
 
     function rankedRemainderHTML(agg, sc, excludeCats) {
       const rows = sc.ranked.filter(r => !excludeCats.includes(r.cat));
-      let html = `<section class="rest"><h3>The rest, ranked</h3>`;
+      let html = `<section class="rest"><p class="rest-label">The rest, ranked</p>`;
       for (const r of rows) {
         const flagged = r.score >= SCORE.NO_LEAK_FLOOR;
         html += `<div class="restrow"><div class="resthead"><span class="restname">${esc(CATS[r.cat].name)}</span><span class="restscore">${r.score.toFixed(2)}</span></div>${barHTML(r.score)}`;
         html += flagged
           ? `<p class="restev">${esc(evidencePlain(r.cat, agg, sc.detail))}.</p>`
-          : `<p class="restev muted">Looking solid here — not a leak for you.</p>`;
+          : `<p class="restev muted">Looking solid here. Not a leak for you.</p>`;
         html += `</div>`;
       }
       return html + `</section>`;
@@ -672,72 +749,72 @@
 
     function technicalDetailsHTML(agg, sc) {
       let html = `<details class="tech"><summary>The exact numbers (centipawns, scores, the works)</summary><div class="techgrid">`;
-      html += `<p class="techev">Each category's severity is scored 0–1, then weighted; the highest is your primary diagnosis. Confidence factor for ${agg.n} games: ${sc.cf}.</p>`;
+      html += `<p class="techev">Each category is scored from 0 to 1, then weighted; the highest is your primary diagnosis. Confidence factor for ${agg.n} games: ${sc.cf}.</p>`;
       for (const r of sc.ranked) {
-        html += `<div class="techrow"><span><strong>${esc(CATS[r.cat].name)}</strong></span><span>raw ${num(sc.raws[r.cat], 3)} → score ${num(r.score, 3)}</span></div>`;
+        html += `<div class="techrow"><span><strong>${esc(CATS[r.cat].name)}</strong></span><span>raw ${num(sc.raws[r.cat], 3)} &nbsp;score ${num(r.score, 3)}</span></div>`;
         html += `<p class="techev">${esc(technicalEvidence(r.cat, agg, sc.detail))}</p>`;
       }
-      html += `<p class="techev">Pipeline sanity check: our computed average centipawn loss matches Lichess's own figure to within ${num(agg.acplSanityMeanAbsDiff, 1)}cp on average${agg.replayBroken ? ` (note: ${agg.replayBroken} games failed move replay)` : ''}. A blunder = a 200+ centipawn swing against you (≈ two pawns) in a position that wasn't already decided.</p>`;
+      html += `<p class="techev">Sanity check: our computed average centipawn loss matches Lichess's own figure to within ${num(agg.acplSanityMeanAbsDiff, 1)}cp on average${agg.replayBroken ? ` (note: ${agg.replayBroken} games failed move replay)` : ''}. A blunder here means a 200cp swing against you (about two pawns) in a position that was not already decided.</p>`;
       return html + `</div></details>`;
     }
 
-    // ---- Error cards (distinct message per case; plain language) ----
+    // ---- Error states (distinct message per case; plain language) ----
     function errorCardHTML(kind, ctx) {
       const u = esc(ctx.username || 'that account');
       const M = {
-        not_found: () => `<article class="card error"><h2>We couldn't find that account.</h2>
-          <p>No Lichess account matches “${u}”. Usernames aren't case-sensitive, but the spelling has to be exact — and it's your <strong>Lichess</strong> username, not your email or a name from another site. Check it and try again.</p></article>`,
-        closed: () => `<article class="card error"><h2>That account is closed.</h2>
-          <p>The Lichess account “${u}” has been closed, so its games aren't available to read.</p></article>`,
-        too_few: () => `<article class="card error"><h2>Not enough rapid or classical games yet.</h2>
-          <p>Chess Checkup only looks at <strong>rapid and classical</strong> games — the slower time controls where your real decisions show up — and it needs at least ${CONFIG.MIN_GAMES} of them. ${u} has ${ctx.rc} so far${ctx.fasterNote ? ' (your bullet and blitz games don\'t count for this)' : ''}. Play a few more longer games, get them analyzed, and come back.</p></article>`,
-        none_analyzed: () => `<article class="card error"><h2>Your games need a computer analysis first.</h2>
-          <p>${u} has ${ctx.rc} rated rapid/classical games, but ${ctx.analyzed === 0 ? 'none of them have' : `only ${ctx.analyzed} of them have`} a Lichess computer analysis — and we need at least ${CONFIG.MIN_GAMES}. The good news: it's free and quick to add.</p>
+        not_found: () => `<section class="card error"><h2>We could not find that account.</h2>
+          <p>No Lichess account matches "${u}". Usernames are not case-sensitive, but the spelling has to match exactly, and it has to be your <strong>Lichess</strong> username, not your email or a name from another site. Check it and try again.</p></section>`,
+        closed: () => `<section class="card error"><h2>That account is closed.</h2>
+          <p>The Lichess account "${u}" has been closed, so its games are not available to read.</p></section>`,
+        too_few: () => `<section class="card error"><h2>Not enough rapid or classical games yet.</h2>
+          <p>Chess Checkup only looks at <strong>rapid and classical</strong> games, the slower time controls where your real decisions show up, and it needs at least ${CONFIG.MIN_GAMES} of them. ${u} has ${ctx.rc} so far${ctx.fasterNote ? ' (bullet and blitz do not count for this)' : ''}. Play a few more longer games, get them analyzed, and come back.</p></section>`,
+        none_analyzed: () => `<section class="card error"><h2>Your games need a computer analysis first.</h2>
+          <p>${u} has ${ctx.rc} rated rapid and classical games, but ${ctx.analyzed === 0 ? 'none of them have' : `only ${ctx.analyzed} of them have`} a Lichess computer analysis, and we need at least ${CONFIG.MIN_GAMES}. The good news is that it is free and quick to add.</p>
           <ol class="howto">
             <li>Open one of your games on Lichess.</li>
-            <li>Under the board, click <strong>“Request a computer analysis”</strong> (the computer / magnifying-glass button).</li>
-            <li>Wait a few seconds — Lichess runs its engine over the whole game.</li>
-            <li>Do this for at least ${CONFIG.MIN_GAMES} of your recent rapid/classical games, then run the checkup again.</li>
+            <li>Under the board, click <strong>"Request a computer analysis"</strong> (the computer or magnifying-glass button).</li>
+            <li>Give it a few seconds while Lichess runs its engine over the whole game.</li>
+            <li>Do this for at least ${CONFIG.MIN_GAMES} of your recent rapid and classical games, then run the checkup again.</li>
           </ol>
-          <p class="freeflag">Why we ask: that analysis is what shows us where you actually went wrong. Without it we'd just be guessing — and we'd rather tell you the truth.</p></article>`,
-        private: () => `<article class="card error"><h2>We can't read this account's games.</h2>
-          <p>${u} shows ${ctx.rc} rapid/classical games, but Lichess returned none of them to us. Your game history may be set to private in your Lichess privacy settings — making it public lets the tool read your games. If it isn't private, Lichess may just be busy right now; try again in a minute.</p></article>`,
-        rate_limit: () => `<article class="card error"><h2>Lichess asked us to slow down.</h2>
-          <p>We've sent too many requests in a short time. Wait a minute, then try again.</p></article>`,
-        network: () => `<article class="card error"><h2>Couldn't reach Lichess.</h2>
-          <p>Something went wrong on the way to Lichess${ctx.msg ? ` (${esc(ctx.msg)})` : ''}. Check your connection and try again.</p></article>`,
+          <p class="freeflag">Why we ask: that analysis is what shows us where you actually went wrong. Without it we would only be guessing, and we would rather tell you the truth than make something up.</p></section>`,
+        private: () => `<section class="card error"><h2>We cannot read this account's games.</h2>
+          <p>${u} shows ${ctx.rc} rapid and classical games, but Lichess returned none of them to us. Your game history may be set to private in your Lichess settings; making it public lets the tool read your games. If it is not private, Lichess might just be busy right now, so try again in a minute.</p></section>`,
+        rate_limit: () => `<section class="card error"><h2>Lichess asked us to slow down.</h2>
+          <p>We have sent too many requests in a short time. Wait a minute, then try again.</p></section>`,
+        network: () => `<section class="card error"><h2>We could not reach Lichess.</h2>
+          <p>Something went wrong on the way to Lichess${ctx.msg ? ` (${esc(ctx.msg)})` : ''}. Check your connection and try again.</p></section>`,
       };
       return (M[kind] || M.network)();
     }
 
     function refusalCardHTML(n) {
-      return `<article class="card refuse">
+      return `<section class="card refuse">
         <h2>Not enough analyzed games to diagnose you honestly.</h2>
-        <p>We found ${n} analyzed rapid or classical game${n === 1 ? '' : 's'} — we need at least ${CONFIG.MIN_GAMES} before we'll say anything you can trust.</p>
-        <p>Here's how to get more: open your recent games on Lichess and click <strong>“Request a computer analysis”</strong> on the ones that don't have it yet (under the board, or in the game's menu). Each analyzed game becomes data this tool can read. Then run the checkup again.</p>
-        <p class="freeflag">We'd rather say “not enough data” than guess.</p>
-      </article>`;
+        <p>We found ${n} analyzed rapid or classical game${n === 1 ? '' : 's'}. We need at least ${CONFIG.MIN_GAMES} before we will say anything you can trust.</p>
+        <p>Here is how to get more: open your recent games on Lichess and click <strong>"Request a computer analysis"</strong> on the ones that do not have it yet (under the board, or in the game menu). Each analyzed game becomes data this tool can read. Then run the checkup again.</p>
+        <p class="freeflag">We would rather say "not enough data" than guess.</p>
+      </section>`;
     }
 
     function cleanCardHTML(agg) {
-      return `<article class="card clean">
+      return `<section class="card clean">
         <h2>No single leak stands out.</h2>
-        <p>Across your last ${agg.n} analyzed games, none of the five areas was bad enough to call out as <em>the</em> thing holding you back — either your weaknesses are spread evenly, or you're just playing cleanly. That's a good problem to have.</p>
-        <p>The ranked list below still shows where you're relatively weakest.</p>
-      </article>`;
+        <p>Across your last ${agg.n} analyzed games, none of the five areas was bad enough to call out as <em>the</em> thing holding you back. Either your weaknesses are spread evenly, or you are simply playing clean chess, and that is a good problem to have.</p>
+        <p>The ranked list below still shows where you are relatively weakest.</p>
+      </section>`;
     }
 
-    const disclosureHTML = () => `<p class="disclosure">Small print: this early version only reads games that already have a Lichess computer analysis, which can lean toward more interesting or important games. Treat the diagnosis as a strong hint, not the final word — a later version will analyze your other games too.</p>`;
+    const disclosureHTML = () => `<p class="disclosure">Small print: this early version only reads games that already have a Lichess computer analysis, which can lean toward more interesting or important games. Treat the diagnosis as a strong hint rather than the final word. A later version will analyze your other games too.</p>`;
 
-    function sampleLine(username, agg) {
+    function specimenLine(username, agg) {
       const speedStr = Object.keys(agg.speeds || {}).length ? Object.entries(agg.speeds).map(([k, v]) => `${v} ${k}`).join(', ') : 'no games';
-      const ratingStr = agg.n ? `, rated ${agg.ratingMin}–${agg.ratingMax}` : '';
-      return `<div class="sample">Chess Checkup for <strong>${esc(username)}</strong> — ${agg.n} analyzed game${agg.n === 1 ? '' : 's'} (${speedStr})${ratingStr}.</div>`;
+      const ratingStr = agg.n ? ` &middot; rated ${agg.ratingMin}–${agg.ratingMax}` : '';
+      return `<p class="specimen"><span class="tag">Sample</span> ${esc(username)} &middot; ${agg.n} analyzed game${agg.n === 1 ? '' : 's'} &middot; ${speedStr}${ratingStr}</p>`;
     }
 
     function renderResult(username, agg, sc) {
       const root = document.getElementById('results');
-      let html = sampleLine(username, agg);
+      let html = specimenLine(username, agg);
 
       if (sc.mode === 'refuse') { root.innerHTML = html + refusalCardHTML(agg.n); return; }
       if (sc.mode === 'clean') { root.innerHTML = html + cleanCardHTML(agg) + rankedRemainderHTML(agg, sc, []) + technicalDetailsHTML(agg, sc) + disclosureHTML(); return; }
@@ -749,12 +826,12 @@
         html += rankedRemainderHTML(agg, sc, [cat]);
       } else { // tie
         const cats = sc.coLeaders.map(c => c.cat);
-        html += `<article class="card tie"><div class="kicker">No clear single leak</div>
+        html += `<article class="card primary tie"><p class="kicker">No clear single leak</p>
           <h2>${cats.length === 2 ? 'Two leaks are running neck and neck.' : 'Several leaks are running neck and neck.'}</h2>
-          <p>${cats.map(c => esc(CATS[c].name)).join(' and ')} came out almost level — the data doesn't cleanly separate them, so here's the honest version: each one, with its evidence and a fix.</p>
+          <p>${cats.map(c => esc(CATS[c].name)).join(' and ')} came out almost level. The data does not cleanly separate them, so here is the honest version: each one, with its evidence and a fix.</p>
           <p class="conf">Confidence: <strong>${esc(confGloss[sc.clabel] || sc.clabel)}</strong> (${agg.n} games).</p></article>`;
         for (const c of sc.coLeaders) {
-          html += `<article class="card sub"><h2>${esc(CATS[c.cat].name)}</h2><p>In your last ${agg.n} analyzed games, ${esc(evidencePlain(c.cat, agg, sc.detail))}.</p></article>`;
+          html += `<section class="card sub"><h2>${esc(CATS[c.cat].name)}</h2><p>In your last ${agg.n} analyzed games, ${esc(evidencePlain(c.cat, agg, sc.detail))}.</p></section>`;
           html += recCardHTML(c.cat, agg, sc);
         }
         html += rankedRemainderHTML(agg, sc, cats);
@@ -766,9 +843,9 @@
     // Console report (debug trace, retained from session 1)
     // ==================================================================
     function report(username, a, sc) {
-      console.log(`\n=== CHESS CHECKUP — ${username} — ${a.n} analyzed rated games ===`);
+      console.log(`\n=== CHESS CHECKUP · ${username} · ${a.n} analyzed rated games ===`);
       console.log(`Sample: ${JSON.stringify(a.speeds)} | results: ${JSON.stringify(a.results)} | rating ${a.ratingMin}–${a.ratingMax} (median ${a.ratingMedian})`);
-      console.log(`Pipeline sanity: mean |our ACPL − Lichess acpl| = ${num(a.acplSanityMeanAbsDiff, 1)} cp` +
+      console.log(`Pipeline sanity: mean abs diff our ACPL vs Lichess acpl = ${num(a.acplSanityMeanAbsDiff, 1)} cp` +
         (a.replayBroken ? ` | WARNING: ${a.replayBroken} games failed move replay` : ''));
       if (sc && sc.mode !== 'refuse') {
         console.log(`MODE: ${sc.mode} | confidence: ${sc.clabel} (factor ${sc.cf})`);
@@ -790,11 +867,11 @@
     async function run() {
       const username = inputEl.value.trim();
       resultsEl.innerHTML = '';
-      if (!username) { setStatus('Enter your Lichess username above.'); inputEl.focus(); return; }
+      if (!username) { setStatus('Type your Lichess username above first.'); inputEl.focus(); return; }
       runBtn.disabled = true;
       try {
         // 1. Profile lookup: existence, closed, and total game counts.
-        setStatus(`Looking up ${username} on Lichess…`);
+        setStatus(`Looking up ${username} on Lichess...`);
         let profile;
         try {
           profile = await fetchProfile(username);
@@ -808,7 +885,7 @@
         const totalAll = profile.count?.all || 0;
 
         // 2. Fetch analyzed rapid/classical games.
-        setStatus(`Reading ${username}'s analyzed games…`);
+        setStatus(`Reading ${username}'s analyzed games...`);
         let games;
         try {
           games = await fetchGames(username);
@@ -819,17 +896,17 @@
         }
         const records = games.map(g => analyzeGame(g, username.toLowerCase())).filter(Boolean);
 
-        // 3. Enough analyzed games -> diagnose.
+        // 3. Enough analyzed games: diagnose.
         if (records.length >= CONFIG.MIN_GAMES) {
           const agg = aggregate(records);
           const sc = score(agg);
           report(username, agg, sc);
           renderResult(username, agg, sc);
-          setStatus(`Done — ${records.length} analyzed games. (Full numbers are in the “exact numbers” section and the browser console.)`);
+          setStatus(`Done. ${records.length} analyzed games. The full numbers are in the exact-numbers section below.`);
           return;
         }
 
-        // 4. Not enough analyzed games — explain WHY, specifically.
+        // 4. Not enough analyzed games: explain why, specifically.
         setStatus('');
         if (rc < CONFIG.MIN_GAMES) {
           return showError('too_few', { username, rc, fasterNote: totalAll - rc >= rc + 10 });
@@ -838,10 +915,10 @@
         if (records.length > 0) {
           return showError('none_analyzed', { username, rc, analyzed: records.length });
         }
-        // Zero readable analyzed games — is anything readable at all? Only call
+        // Zero readable analyzed games: is anything readable at all? Only call
         // it "private" when the probe definitively comes back empty on success;
-        // a failed probe is a rate-limit / network issue, not a private account.
-        setStatus('Checking your game history…');
+        // a failed probe is a rate-limit or network issue, not a private account.
+        setStatus('Checking your game history...');
         let anyGame;
         try {
           anyGame = await probeAnyGame(username);
