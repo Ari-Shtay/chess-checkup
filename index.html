@@ -4,17 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Chess Checkup: the one weakness costing you the most rating</title>
-  <meta name="description" content="Free tool. Enter your Lichess username and Chess Checkup reads your analyzed rapid and classical games, names the one weakness costing you the most rating, shows the evidence, and gives one honest fix. No signup, no ads, no sponsors.">
+  <meta name="description" content="Free tool. Enter your Lichess username and Chess Checkup reads your analyzed rapid and classical games, names the one weakness costing you the most rating, shows the evidence, and gives one fix. No signup, no ads, no sponsors.">
   <meta name="theme-color" content="#f4f1e9">
   <!-- Content Security Policy: chess.js CDN module, Google Fonts, and the Lichess API only -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://lichess.org https://cdn.jsdelivr.net; img-src 'self' data:; base-uri 'none'">
   <!-- Open Graph / Twitter: link previews when shared on Reddit, etc. -->
   <meta property="og:type" content="website">
   <meta property="og:title" content="Chess Checkup">
-  <meta property="og:description" content="Enter your Lichess username. It names the one weakness costing you the most rating, with the evidence, plus one honest fix. Two of five possible diagnoses tell you to buy nothing.">
+  <meta property="og:description" content="Enter your Lichess username. It names the one weakness costing you the most rating, with the evidence, plus one fix. Two of five diagnoses tell you to buy nothing.">
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="Chess Checkup">
-  <meta name="twitter:description" content="The one weakness costing you the most rating, with the evidence and one honest fix. Free, no signup.">
+  <meta name="twitter:description" content="The one weakness costing you the most rating, with the evidence and one fix. Free, no signup.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
@@ -146,8 +146,8 @@
     <header class="masthead">
       <p class="eyebrow">A checkup for the 1000 to 1800 improver</p>
       <h1>Chess Checkup</h1>
-      <p class="lede">Type in your Lichess username. This reads your analyzed rapid and classical games and tells you the single weakness costing you the most rating, with the evidence behind it and one honest thing to do about it.</p>
-      <p class="aside">Two of the five things it can diagnose tell you to buy nothing at all. I would rather lose a book sale than point you at a problem you do not actually have.</p>
+      <p class="lede">Enter your Lichess username. It reads your analyzed rapid and classical games and names the one weakness costing you the most rating, with the evidence and one thing to do about it.</p>
+      <p class="aside">Two of the five diagnoses tell you to buy nothing. I'd rather lose a sale than send you after a problem you don't have.</p>
     </header>
 
     <section class="intake" aria-label="Run a checkup">
@@ -156,13 +156,13 @@
         <input id="username" placeholder="username" aria-label="Lichess username" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go">
         <button id="run">Run the checkup</button>
       </div>
-      <p class="hint">It only reads your slow games, on purpose. Bullet mostly measures who panics faster, which is not the thing worth fixing.</p>
+      <p class="hint">It only reads your slow games. Bullet mostly measures who panics faster, which isn't worth fixing.</p>
       <p id="status" role="status"></p>
     </section>
 
     <div id="results"></div>
 
-    <footer class="sitefoot">Nothing recommended here is sponsored or paid for, and no link sends us a cent. If that ever changes, this line is where you will read about it first.</footer>
+    <footer class="sitefoot">Nothing here is sponsored. No link pays us. If that changes, this line will say so.</footer>
   </main>
 
   <script type="module">
@@ -584,9 +584,9 @@
     // per-game rate must be framed as a rate, not as a share of games.
     const aboutPerGame = x =>
       x <= 0 ? 'rarely' :
-      x >= 1.2 ? 'more than one a game, on average' :
-      x >= 0.8 ? 'about one a game, on average' :
-      `about one every ${Math.round(1 / x)} games, on average`;
+      x >= 1.2 ? 'more than one a game' :
+      x >= 0.8 ? 'about one a game' :
+      `about one every ${Math.round(1 / x)} games`;
 
     // PLAIN evidence: no centipawns, no "acpl". This is what the user reads.
     function evidencePlain(cat, agg, detail) {
@@ -594,32 +594,32 @@
       if (cat === 'cat1') {
         const eqT = a.cat1.equalPositionBlundersTotal, mwT = a.cat1.missedWinsTotal;
         const parts = [];
-        if (eqT > 0) parts.push(`you made ${plural(eqT, 'serious blunder', 'serious blunders')} while the game was still even, single moves that swung it sharply toward your opponent (${aboutPerGame(a.cat1.equalPositionBlundersPerGame)})`);
-        if (mwT > 0) parts.push(`${plural(mwT, 'time', 'times')} you had a far stronger move available and gave away a big chunk of your advantage instead`);
-        return parts.length ? parts.join(', and ') : 'your tactics are holding up well';
+        if (eqT > 0) parts.push(`you made ${plural(eqT, 'serious blunder', 'serious blunders')} in even positions, single moves that swung the game your opponent's way (${aboutPerGame(a.cat1.equalPositionBlundersPerGame)})`);
+        if (mwT > 0) parts.push(`${plural(mwT, 'time', 'times')} you had a far stronger move and gave away a big chunk of your advantage instead`);
+        return parts.length ? parts.join(', and ') : 'your tactics are solid';
       }
       if (cat === 'cat2') {
         const gap = a.cat2.endgameVsMiddlegameGapCp;
         const parts = [];
-        if (gap != null && gap > 0) parts.push('you play noticeably less accurately once the game simplifies into an endgame than you do earlier, with more mistakes slipping in after the queens come off');
-        if (a.cat2.goodEndgameEntries > 0 && a.cat2.goodEntriesNotWon > 0) parts.push(`${a.cat2.goodEntriesNotWon} of the ${a.cat2.goodEndgameEntries} endgames you reached with a clear advantage slipped to a draw or a loss`);
+        if (gap != null && gap > 0) parts.push('you play noticeably worse once the game simplifies into an endgame, with more mistakes once the queens come off');
+        if (a.cat2.goodEndgameEntries > 0 && a.cat2.goodEntriesNotWon > 0) parts.push(`${a.cat2.goodEntriesNotWon} of the ${a.cat2.goodEndgameEntries} endgames you reached with a clear advantage slipped to a draw or loss`);
         return parts.length ? parts.join(', and ') : 'your endgames are about as sharp as the rest of your game';
       }
       if (cat === 'cat3') {
         const won = a.cat3.gamesReachedWinning - a.cat3.winningNotWon;
-        return `you reached a clearly winning position in ${a.cat3.gamesReachedWinning} games but only finished the job in ${won} of them, so ${plural(a.cat3.winningNotWon, 'game', 'games')} you had in the bag slipped away`;
+        return `you reached a clearly winning position in ${a.cat3.gamesReachedWinning} games and won only ${won} of them`;
       }
       if (cat === 'cat4') {
         const f = detail.worstFamily;
-        if (f && !detail.scatterDriven) return `your ${f.family} keeps going wrong early: in ${f.disasters} of the ${f.games} games you played it, you were already worse by move 12, the same opening failing the same way`;
-        return `you spread your ${a.n} games across ${a.cat4.distinctFamilies} different openings and never settled into any of them, and picking one or two to stick with would help more than learning new ones`;
+        if (f && !detail.scatterDriven) return `your ${f.family} keeps going wrong early: in ${f.disasters} of the ${f.games} games you played it, you were worse by move 12`;
+        return `you played ${a.cat4.distinctFamilies} different openings across these games and went deep in none of them`;
       }
       if (cat === 'cat5') {
         const snapPct = a.cat5.blundersTotal ? Math.round(a.cat5.snapBlunders / a.cat5.blundersTotal * 100) : 0;
-        const bits = [`${snapPct}% of your blunders (${a.cat5.snapBlunders} of ${a.cat5.blundersTotal}) came on moves you played in under 10 seconds, snap decisions rather than real thinking time`];
+        const bits = [`${snapPct}% of your blunders (${a.cat5.snapBlunders} of ${a.cat5.blundersTotal}) came on moves you played in under 10 seconds`];
         if (a.cat5.lossesOnTime > 0) bits.push(`${a.cat5.lossesOnTime} of your ${plural(a.cat5.losses, 'loss', 'losses')} were just running out of time`);
-        bits.push(`${a.cat5.lowTimeBlunders} of those blunders came with under 20 seconds left on your clock`);
-        return bits.join(', and ');
+        bits.push(`${a.cat5.lowTimeBlunders} of those came with under 20 seconds left`);
+        return bits.length <= 1 ? bits[0] : `${bits.slice(0, -1).join(', ')}, and ${bits[bits.length - 1]}`;
       }
     }
 
@@ -636,11 +636,12 @@
       if (cat === 'cat5') return `losses on time: ${a.cat5.lossesOnTime}/${a.cat5.losses} (${pct(a.cat5.lossesOnTimeShare)}); low-time blunders: ${a.cat5.lowTimeBlunders}/${a.cat5.blundersTotal} (${pct(a.cat5.lowTimeBlunderShare)}); snap-move blunders: ${a.cat5.snapBlunders}.`;
     }
 
-    const confGloss = {
-      high: 'high, based on enough games to trust this',
-      medium: 'medium, a fair read that more analyzed games would sharpen',
-      low: 'low, an early hint; analyze more games to be sure',
-    };
+    function confLine(clabel, n) {
+      const tail = clabel === 'low' ? `. Only ${n} games; analyze more to be sure.`
+        : clabel === 'medium' ? `, ${n} games. More would sharpen it.`
+        : `, ${n} games.`;
+      return `Confidence: <strong>${clabel}</strong>${tail}`;
+    }
 
     // ==================================================================
     // Recommendation per category (spec section 4). Free first whenever honest.
@@ -650,59 +651,59 @@
       const cat5AlsoHigh = sc.scores.cat5 >= SCORE.NO_LEAK_FLOOR;
       const cat3AlsoHigh = sc.scores.cat3 >= SCORE.NO_LEAK_FLOOR;
       if (cat === 'cat1') return {
-        fix: 'Build a steady Lichess puzzle habit: 20 minutes a day, mixed themes, every puzzle solved slowly and all the way through before you move, and no streak-chasing.',
-        why: 'At your level, single careless moves cost more rating than anything else. Solving puzzles slowly rebuilds the habit of checking each move before you commit to it, which is the exact habit that keeps breaking down in your games.',
+        fix: 'Build a daily Lichess puzzle habit: 20 minutes, mixed themes, each puzzle solved slowly and all the way through before you move. No streak-chasing.',
+        why: 'At your level, single careless moves cost more rating than anything else. Solving slowly rebuilds the habit of checking each move before you commit, which is the exact habit that breaks down in your games.',
         free: true,
         link: { label: 'Start on Lichess puzzles (free)', url: 'https://lichess.org/training' },
         options: [
-          { label: 'The Woodpecker Method', note: 'Smith and Tikkanen, Quality Chess 2018. You solve the same 1,100+ puzzles over and over, a little faster each pass. Around $27 to $32. It is a real grind, and the free habit above already covers most people.', url: 'https://www.amazon.com/s?k=Woodpecker+Method+Axel+Smith+Tikkanen' },
-          { label: '1001 Brilliant Ways to Checkmate (Reinfeld)', note: 'Cheap, old, and proven, if you would rather work from a book on paper.', url: 'https://www.amazon.com/s?k=Reinfeld+1001+Brilliant+Ways+to+Checkmate' },
+          { label: 'The Woodpecker Method', note: "Smith and Tikkanen, Quality Chess 2018. You solve the same 1,100+ puzzles over and over, faster each pass. Around $27 to $32. A real grind; the free habit above covers most people.", url: 'https://www.amazon.com/s?k=Woodpecker+Method+Axel+Smith+Tikkanen' },
+          { label: '1001 Brilliant Ways to Checkmate (Reinfeld)', note: "Cheap and proven, if you'd rather work from a book.", url: 'https://www.amazon.com/s?k=Reinfeld+1001+Brilliant+Ways+to+Checkmate' },
         ],
       };
       if (cat === 'cat2') return {
         fix: "Silman's Complete Endgame Course.",
-        why: 'It is split by rating level, so you read only the chapter for where you are now and skip the rest. That lines up neatly with how this tool sizes you up. Paperback or Kindle.',
+        why: "It's split by rating level, so you read only the chapter for where you are now and skip the rest. Paperback or Kindle.",
         free: false,
         link: { label: "Silman's Complete Endgame Course", url: 'https://www.amazon.com/s?k=Silman+Complete+Endgame+Course' },
         options: agg.ratingMedian >= 1500 ? [
-          { label: '100 Endgames You Must Know', note: 'de la Villa. Excellent, but the author himself frames it as a second step, so come to it after Silman rather than before. There is a Chessable version if you prefer flashcard-style drilling.', url: 'https://www.amazon.com/s?k=100+Endgames+You+Must+Know+de+la+Villa' },
+          { label: '100 Endgames You Must Know', note: "de la Villa. Excellent, but the author calls it a second step, so read it after Silman, not before. There's a Chessable version if you prefer flashcards.", url: 'https://www.amazon.com/s?k=100+Endgames+You+Must+Know+de+la+Villa' },
         ] : [],
       };
       if (cat === 'cat3') return {
-        fix: "A habit, nothing to buy. The moment you see you are winning, stop and take a full minute. Ask what your opponent's one trick could be, trade pieces (not pawns) to kill their chances, and stop hunting for a flashy finish.",
-        why: 'Won games get thrown away by rushing and showing off, not by missing knowledge. A deliberate pause is what actually closes them out.',
+        fix: "A habit, nothing to buy. The moment you see you're winning, stop and take a full minute. Ask what your opponent's one trick is, trade pieces (not pawns) to kill their chances, and stop hunting for a flashy finish.",
+        why: 'Won games get thrown away by rushing and showing off, not by missing knowledge. A deliberate pause closes them out.',
         free: true,
         link: null,
         options: [
-          { label: 'A Guide to Chess Improvement (Best of Novice Nook)', note: `Heisman. It covers exactly this, keeping a won game won${cat5AlsoHigh ? ', and it doubles as a fix for your time trouble, so one book handles both' : ''}. Optional only; the free habit above is the real fix.`, url: 'https://www.amazon.com/s?k=Heisman+Guide+to+Chess+Improvement+Novice+Nook' },
+          { label: 'A Guide to Chess Improvement (Best of Novice Nook)', note: `Heisman. Covers keeping a won game won${cat5AlsoHigh ? '; also covers your time trouble, so one book handles both' : ''}. Optional; the free habit above is the real fix.`, url: 'https://www.amazon.com/s?k=Heisman+Guide+to+Chess+Improvement+Novice+Nook' },
         ],
       };
       if (cat === 'cat4') {
         const f = d.worstFamily;
         if (f && !d.scatterDriven) return {
-          fix: `Do not rebuild your whole opening, just fix the one that keeps failing. Pick a single solid line in the ${f.family} and drill only that, using a free Chessable "Short & Sweet" course (10 to 30 lines, often with video).`,
-          why: `The problem is narrow: the ${f.family} went wrong in ${f.disasters} of your ${f.games} games with it. Fixing that one opening removes most of the damage, and there is no need to study openings in general.`,
+          fix: `Don't rebuild your whole opening, just fix the one that keeps failing. Pick one solid line in the ${f.family} and drill only that, with a free Chessable "Short & Sweet" course (10 to 30 lines, often with video).`,
+          why: `It's narrow: the ${f.family} went wrong in ${f.disasters} of your ${f.games} games with it. Fix that one opening and most of the damage is gone. You don't need to study openings in general.`,
           free: true,
           link: { label: `Free Short & Sweet for the ${f.family}`, url: `https://www.chessable.com/courses/?q=${encodeURIComponent(f.family + ' short and sweet')}` },
           options: [],
         };
         return {
-          fix: 'Study openings less, not more. Pick one for White and one for Black and stick with them. Try a free Chessable "Short & Sweet" course for your most-played first move before you commit to anything bigger.',
-          why: `You are jumping between ${agg.cat4.distinctFamilies} different openings and never getting comfortable in any of them. Narrowing down helps you more than any new book.`,
+          fix: 'Study openings less, not more. Pick one for White and one for Black and stick with them. Try a free Chessable "Short & Sweet" course for your most-played first move before committing to anything bigger.',
+          why: `You're spread across ${agg.cat4.distinctFamilies} openings and never settle into any. Narrowing down helps more than any new book.`,
           free: true,
           link: { label: 'Browse free Short & Sweet courses', url: 'https://www.chessable.com/courses/?q=short+and+sweet' },
           options: [
-            { label: 'Discovering Chess Openings', note: 'Emms, around $15. It teaches the ideas behind openings (develop, take the center, keep your king safe) instead of lines to memorize, and it is good precisely because it talks you out of cramming theory.', url: 'https://www.amazon.com/s?k=Discovering+Chess+Openings+Emms' },
+            { label: 'Discovering Chess Openings', note: 'Emms, around $15. Teaches the ideas behind openings (develop, take the center, keep your king safe) instead of lines to memorize. Good because it talks you out of cramming theory.', url: 'https://www.amazon.com/s?k=Discovering+Chess+Openings+Emms' },
           ],
         };
       }
       if (cat === 'cat5') return {
-        fix: "A habit, nothing to buy. Decide roughly how much time each phase of the game gets, and before every move run one quick check: what does this move leave undefended, and what are my opponent's checks, captures, and threats? After any game you lose on time, look back at where the time actually went.",
-        why: 'Most of these losses are habit, not knowledge. A fixed pre-move check and a little clock discipline are what stop the snap blunders and the flag-falls.',
+        fix: "A habit, nothing to buy. Decide roughly how much time each phase gets, and before every move run one check: what does this leave undefended, and what are my opponent's checks, captures, and threats? After any game you lose on time, look at where the time went.",
+        why: 'Most of these losses are habit, not knowledge. A fixed pre-move check and a little clock discipline stop the snap blunders and the flag-falls.',
         free: true,
         link: null,
         options: [
-          { label: 'A Guide to Chess Improvement (Best of Novice Nook)', note: `Heisman. Time management is one of its main subjects${cat3AlsoHigh ? ', and it doubles as a fix for closing out won games, so one book handles both' : ''}. Optional only; the free habit above is the real fix.`, url: 'https://www.amazon.com/s?k=Heisman+Guide+to+Chess+Improvement+Novice+Nook' },
+          { label: 'A Guide to Chess Improvement (Best of Novice Nook)', note: `Heisman. Time management is one of its main subjects${cat3AlsoHigh ? '; also covers closing out won games, so one book handles both' : ''}. Optional; the free habit above is the real fix.`, url: 'https://www.amazon.com/s?k=Heisman+Guide+to+Chess+Improvement+Novice+Nook' },
         ],
       };
     }
@@ -714,8 +715,8 @@
       return `<article class="card primary">
         <p class="kicker">Primary diagnosis</p>
         <h2>Your number one leak: ${esc(CATS[cat].name)}.</h2>
-        <p>In your last ${agg.n} analyzed games, ${esc(evidencePlain(cat, agg, sc.detail))}. Players at your level usually gain more rating fixing this than anything else.</p>
-        <p class="conf">Confidence: <strong>${esc(confGloss[sc.clabel] || sc.clabel)}</strong> (${agg.n} games).</p>
+        <p>In your last ${agg.n} analyzed games, ${esc(evidencePlain(cat, agg, sc.detail))}. At your level, fixing this gains more rating than anything else.</p>
+        <p class="conf">${confLine(sc.clabel, agg.n)}</p>
       </article>`;
     }
 
@@ -723,10 +724,10 @@
       const r = recommendation(cat, agg, sc);
       let html = `<section class="card rec"><p class="kicker">Prescription</p><p class="fix">${esc(r.fix)}</p>`;
       html += `<p class="why"><span class="lbl">Why this one</span>${esc(r.why)}</p>`;
-      if (r.free) html += `<p class="freeflag">It is free, and it comes first because for most people that is honestly the best fix.</p>`;
+      if (r.free) html += `<p class="freeflag">It's free, and for most people it's the best fix.</p>`;
       if (r.link) html += `<p class="link"><a href="${esc(r.link.url)}" target="_blank" rel="noopener">${esc(r.link.label)}</a></p>`;
       if (r.options && r.options.length) {
-        html += `<details class="more"><summary>${r.free ? 'If you would rather spend money' : 'Also worth knowing'}</summary>`;
+        html += `<details class="more"><summary>${r.free ? "If you'd rather spend money" : 'Also worth knowing'}</summary>`;
         for (const o of r.options) html += `<p><a href="${esc(o.url)}" target="_blank" rel="noopener">${esc(o.label)}</a>. ${esc(o.note)}</p>`;
         html += `</details>`;
       }
@@ -741,20 +742,20 @@
         html += `<div class="restrow"><div class="resthead"><span class="restname">${esc(CATS[r.cat].name)}</span><span class="restscore">${r.score.toFixed(2)}</span></div>${barHTML(r.score)}`;
         html += flagged
           ? `<p class="restev">${esc(evidencePlain(r.cat, agg, sc.detail))}.</p>`
-          : `<p class="restev muted">Looking solid here. Not a leak for you.</p>`;
+          : `<p class="restev muted">No problem here.</p>`;
         html += `</div>`;
       }
       return html + `</section>`;
     }
 
     function technicalDetailsHTML(agg, sc) {
-      let html = `<details class="tech"><summary>The exact numbers (centipawns, scores, the works)</summary><div class="techgrid">`;
-      html += `<p class="techev">Each category is scored from 0 to 1, then weighted; the highest is your primary diagnosis. Confidence factor for ${agg.n} games: ${sc.cf}.</p>`;
+      let html = `<details class="tech"><summary>The exact numbers (centipawns, scores)</summary><div class="techgrid">`;
+      html += `<p class="techev">Each category scores 0 to 1, then gets weighted; the top score is the diagnosis. Confidence factor for ${agg.n} games: ${sc.cf}.</p>`;
       for (const r of sc.ranked) {
         html += `<div class="techrow"><span><strong>${esc(CATS[r.cat].name)}</strong></span><span>raw ${num(sc.raws[r.cat], 3)} &nbsp;score ${num(r.score, 3)}</span></div>`;
         html += `<p class="techev">${esc(technicalEvidence(r.cat, agg, sc.detail))}</p>`;
       }
-      html += `<p class="techev">Sanity check: our computed average centipawn loss matches Lichess's own figure to within ${num(agg.acplSanityMeanAbsDiff, 1)}cp on average${agg.replayBroken ? ` (note: ${agg.replayBroken} games failed move replay)` : ''}. A blunder here means a 200cp swing against you (about two pawns) in a position that was not already decided.</p>`;
+      html += `<p class="techev">Sanity check: our average centipawn loss matches Lichess's own to within ${num(agg.acplSanityMeanAbsDiff, 1)}cp${agg.replayBroken ? `; ${agg.replayBroken} games failed move replay` : ''}. A blunder here is a 200cp swing against you (about two pawns) from a position that wasn't already decided.</p>`;
       return html + `</div></details>`;
     }
 
@@ -762,49 +763,49 @@
     function errorCardHTML(kind, ctx) {
       const u = esc(ctx.username || 'that account');
       const M = {
-        not_found: () => `<section class="card error"><h2>We could not find that account.</h2>
-          <p>No Lichess account matches "${u}". Usernames are not case-sensitive, but the spelling has to match exactly, and it has to be your <strong>Lichess</strong> username, not your email or a name from another site. Check it and try again.</p></section>`,
+        not_found: () => `<section class="card error"><h2>That username isn't on Lichess.</h2>
+          <p>Nothing on Lichess matches "${u}". The spelling has to be exact, and it has to be your <strong>Lichess</strong> username, not your email or a handle from another site. Check it and try again.</p></section>`,
         closed: () => `<section class="card error"><h2>That account is closed.</h2>
-          <p>The Lichess account "${u}" has been closed, so its games are not available to read.</p></section>`,
-        too_few: () => `<section class="card error"><h2>Not enough rapid or classical games yet.</h2>
-          <p>Chess Checkup only looks at <strong>rapid and classical</strong> games, the slower time controls where your real decisions show up, and it needs at least ${CONFIG.MIN_GAMES} of them. ${u} has ${ctx.rc} so far${ctx.fasterNote ? ' (bullet and blitz do not count for this)' : ''}. Play a few more longer games, get them analyzed, and come back.</p></section>`,
+          <p>${u} is closed on Lichess, so its games aren't readable.</p></section>`,
+        too_few: () => `<section class="card error"><h2>Not enough rapid or classical games.</h2>
+          <p>Chess Checkup only reads <strong>rapid and classical</strong>, the slow games where your decisions show, and it needs at least ${CONFIG.MIN_GAMES}. ${u} has ${ctx.rc}${ctx.fasterNote ? " (bullet and blitz don't count)" : ''}. Play a few more, get them analyzed, and come back.</p></section>`,
         none_analyzed: () => `<section class="card error"><h2>Your games need a computer analysis first.</h2>
-          <p>${u} has ${ctx.rc} rated rapid and classical games, but ${ctx.analyzed === 0 ? 'none of them have' : `only ${ctx.analyzed} of them have`} a Lichess computer analysis, and we need at least ${CONFIG.MIN_GAMES}. The good news is that it is free and quick to add.</p>
+          <p>${u} has ${ctx.rc} rated rapid and classical games, but ${ctx.analyzed === 0 ? 'none' : `only ${ctx.analyzed}`} have a Lichess computer analysis, and we need at least ${CONFIG.MIN_GAMES}. It's free and quick to add:</p>
           <ol class="howto">
             <li>Open one of your games on Lichess.</li>
-            <li>Under the board, click <strong>"Request a computer analysis"</strong> (the computer or magnifying-glass button).</li>
-            <li>Give it a few seconds while Lichess runs its engine over the whole game.</li>
-            <li>Do this for at least ${CONFIG.MIN_GAMES} of your recent rapid and classical games, then run the checkup again.</li>
+            <li>Under the board, click <strong>"Request a computer analysis"</strong>.</li>
+            <li>Wait a few seconds while the engine runs.</li>
+            <li>Do this for at least ${CONFIG.MIN_GAMES} recent rapid or classical games, then run the checkup again.</li>
           </ol>
-          <p class="freeflag">Why we ask: that analysis is what shows us where you actually went wrong. Without it we would only be guessing, and we would rather tell you the truth than make something up.</p></section>`,
-        private: () => `<section class="card error"><h2>We cannot read this account's games.</h2>
-          <p>${u} shows ${ctx.rc} rapid and classical games, but Lichess returned none of them to us. Your game history may be set to private in your Lichess settings; making it public lets the tool read your games. If it is not private, Lichess might just be busy right now, so try again in a minute.</p></section>`,
-        rate_limit: () => `<section class="card error"><h2>Lichess asked us to slow down.</h2>
-          <p>We have sent too many requests in a short time. Wait a minute, then try again.</p></section>`,
-        network: () => `<section class="card error"><h2>We could not reach Lichess.</h2>
-          <p>Something went wrong on the way to Lichess${ctx.msg ? ` (${esc(ctx.msg)})` : ''}. Check your connection and try again.</p></section>`,
+          <p class="freeflag">That analysis is what shows where you went wrong. Without it, this is just guessing.</p></section>`,
+        private: () => `<section class="card error"><h2>Those games are private.</h2>
+          <p>${u} has ${ctx.rc} rapid and classical games, but Lichess won't hand them over. They're probably set to private in your Lichess settings; make them public and the tool can read them. If they aren't private, Lichess is busy right now. Try again in a minute.</p></section>`,
+        rate_limit: () => `<section class="card error"><h2>Too many requests.</h2>
+          <p>Lichess is throttling us. Wait a minute, then try again.</p></section>`,
+        network: () => `<section class="card error"><h2>Couldn't reach Lichess.</h2>
+          <p>Something failed on the way to Lichess${ctx.msg ? ` (${esc(ctx.msg)})` : ''}. Check your connection and try again.</p></section>`,
       };
       return (M[kind] || M.network)();
     }
 
     function refusalCardHTML(n) {
       return `<section class="card refuse">
-        <h2>Not enough analyzed games to diagnose you honestly.</h2>
-        <p>We found ${n} analyzed rapid or classical game${n === 1 ? '' : 's'}. We need at least ${CONFIG.MIN_GAMES} before we will say anything you can trust.</p>
-        <p>Here is how to get more: open your recent games on Lichess and click <strong>"Request a computer analysis"</strong> on the ones that do not have it yet (under the board, or in the game menu). Each analyzed game becomes data this tool can read. Then run the checkup again.</p>
-        <p class="freeflag">We would rather say "not enough data" than guess.</p>
+        <h2>Not enough analyzed games.</h2>
+        <p>We found ${n} analyzed rapid or classical game${n === 1 ? '' : 's'}. We need at least ${CONFIG.MIN_GAMES} before the result means anything.</p>
+        <p>Open your recent games on Lichess and click <strong>"Request a computer analysis"</strong> on the ones missing it (under the board, or in the game menu). Then run the checkup again.</p>
+        <p class="freeflag">Better to say "not enough data" than guess.</p>
       </section>`;
     }
 
     function cleanCardHTML(agg) {
       return `<section class="card clean">
         <h2>No single leak stands out.</h2>
-        <p>Across your last ${agg.n} analyzed games, none of the five areas was bad enough to call out as <em>the</em> thing holding you back. Either your weaknesses are spread evenly, or you are simply playing clean chess, and that is a good problem to have.</p>
-        <p>The ranked list below still shows where you are relatively weakest.</p>
+        <p>Across your last ${agg.n} analyzed games, no area is bad enough to single out. Either your weaknesses are even, or you're just playing well.</p>
+        <p>The ranked list below still shows where you're relatively weakest.</p>
       </section>`;
     }
 
-    const disclosureHTML = () => `<p class="disclosure">Small print: this early version only reads games that already have a Lichess computer analysis, which can lean toward more interesting or important games. Treat the diagnosis as a strong hint rather than the final word. A later version will analyze your other games too.</p>`;
+    const disclosureHTML = () => `<p class="disclosure">This only reads games that already have a Lichess analysis, which skews toward games people cared enough to check. Treat the result as a strong signal, not a verdict. A later version will cover the rest of your games.</p>`;
 
     function specimenLine(username, agg) {
       const speedStr = Object.keys(agg.speeds || {}).length ? Object.entries(agg.speeds).map(([k, v]) => `${v} ${k}`).join(', ') : 'no games';
@@ -826,10 +827,14 @@
         html += rankedRemainderHTML(agg, sc, [cat]);
       } else { // tie
         const cats = sc.coLeaders.map(c => c.cat);
-        html += `<article class="card primary tie"><p class="kicker">No clear single leak</p>
-          <h2>${cats.length === 2 ? 'Two leaks are running neck and neck.' : 'Several leaks are running neck and neck.'}</h2>
-          <p>${cats.map(c => esc(CATS[c].name)).join(' and ')} came out almost level. The data does not cleanly separate them, so here is the honest version: each one, with its evidence and a fix.</p>
-          <p class="conf">Confidence: <strong>${esc(confGloss[sc.clabel] || sc.clabel)}</strong> (${agg.n} games).</p></article>`;
+        const names = cats.map(c => esc(CATS[c].name));
+        const count = { 2: 'Two', 3: 'Three', 4: 'Four', 5: 'Five' }[cats.length] || `${cats.length}`;
+        const allOf = { 2: "here's both", 3: "here's all three", 4: "here's all four", 5: "here's all five" }[cats.length] || "here are all of them";
+        const nameList = cats.length === 2 ? `${names[0]} and ${names[1]}` : names.join(', ');
+        html += `<article class="card primary tie"><p class="kicker">No single leak</p>
+          <h2>${count} things are about equally bad.</h2>
+          <p>${nameList}. I can't rank them, so ${allOf}.</p>
+          <p class="conf">${confLine(sc.clabel, agg.n)}</p></article>`;
         for (const c of sc.coLeaders) {
           html += `<section class="card sub"><h2>${esc(CATS[c.cat].name)}</h2><p>In your last ${agg.n} analyzed games, ${esc(evidencePlain(c.cat, agg, sc.detail))}.</p></section>`;
           html += recCardHTML(c.cat, agg, sc);
@@ -867,7 +872,7 @@
     async function run() {
       const username = inputEl.value.trim();
       resultsEl.innerHTML = '';
-      if (!username) { setStatus('Type your Lichess username above first.'); inputEl.focus(); return; }
+      if (!username) { setStatus('Enter your username first.'); inputEl.focus(); return; }
       runBtn.disabled = true;
       try {
         // 1. Profile lookup: existence, closed, and total game counts.
@@ -902,7 +907,7 @@
           const sc = score(agg);
           report(username, agg, sc);
           renderResult(username, agg, sc);
-          setStatus(`Done. ${records.length} analyzed games. The full numbers are in the exact-numbers section below.`);
+          setStatus(`Done. ${records.length} analyzed games. Full numbers below.`);
           return;
         }
 
