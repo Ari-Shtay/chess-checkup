@@ -63,6 +63,20 @@
     .hint { font-style: italic; color: var(--soft); font-size: .96rem; margin-top: .95rem; max-width: 34em; }
     #status { font-family: var(--mono); font-size: .76rem; letter-spacing: .02em; color: var(--soft); margin-top: .85rem; min-height: 1.1em; }
 
+    /* Loading: a report being compiled */
+    .loading { margin-top: 2rem; }
+    .loading .kicker { margin-bottom: .65rem; }
+    .loadline { font-family: var(--mono); font-size: .98rem; color: var(--ink); margin: 0; }
+    .caret { display: inline-block; width: .5ch; height: 1.05em; background: var(--ink); margin-left: .14em; vertical-align: -.16em; animation: cc-blink 1.06s step-end infinite; }
+    @keyframes cc-blink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
+    .loadsub { font-family: var(--mono); font-size: .8rem; color: var(--soft); margin: .45rem 0 0; min-height: 1.1em; font-variant-numeric: tabular-nums; }
+    .loadbar { height: 2px; background: var(--rule); margin-top: 1.1rem; }
+    .loadbar-fill { height: 100%; width: 0; background: var(--ink); transition: width .25s ease; }
+    @media (prefers-reduced-motion: reduce) {
+      .caret { animation: none; }
+      .loadbar-fill { transition: none; }
+    }
+
     /* Specimen line + section labels */
     .specimen { font-family: var(--mono); font-size: .74rem; color: var(--soft); margin-top: 2rem; }
     .specimen .tag { letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
@@ -247,7 +261,7 @@
       return res.json();
     }
 
-    async function fetchGames(username) {
+    async function fetchGames(username, onProgress) {
       const params = new URLSearchParams({
         max: CONFIG.MAX_GAMES, rated: true, perfType: CONFIG.PERF_TYPES,
         analysed: true, evals: true, clocks: true, opening: true, sort: 'dateDesc',
@@ -260,8 +274,31 @@
       if (res.status === 404) throw apiError(404);
       if (res.status === 429) throw apiError(429);
       if (!res.ok) throw apiError('http', `Lichess responded ${res.status}`);
-      const text = await res.text();
-      return text.split('\n').filter(Boolean).map(line => JSON.parse(line));
+
+      // Stream the NDJSON so we can report each game as it arrives.
+      const games = [];
+      const pushLine = line => { const t = line.trim(); if (t) { games.push(JSON.parse(t)); onProgress?.(games.length); } };
+      if (!res.body) { // older browsers: no streaming, parse all at once
+        (await res.text()).split('\n').forEach(pushLine);
+        return games;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let nl;
+          while ((nl = buffer.indexOf('\n')) >= 0) {
+            pushLine(buffer.slice(0, nl));
+            buffer = buffer.slice(nl + 1);
+          }
+        }
+      } catch (e) { throw apiError('network', e.message); }
+      pushLine(buffer);
+      return games;
     }
 
     // Probe: does ANY rated rapid/classical game come back (ignoring analysis)?
@@ -869,14 +906,54 @@
     const setStatus = s => { statusEl.textContent = s; };
     const showError = (kind, ctx = {}) => { resultsEl.innerHTML = errorCardHTML(kind, ctx); setStatus(''); };
 
+    // Yield to the browser so a DOM update can paint between batches. Uses
+    // setTimeout (not requestAnimationFrame) so it still fires when the tab is
+    // backgrounded; rAF pauses on hidden pages and would stall the analysis.
+    const nextPaint = () => new Promise(r => setTimeout(r, 0));
+
+    // Replay + analyze in batches so the running count animates and the page
+    // stays responsive during the CPU-heavy chess.js replay.
+    async function analyzeAll(games, userId, onProgress) {
+      const records = [];
+      const total = games.length;
+      const BATCH = 6;
+      for (let i = 0; i < total; i += BATCH) {
+        const end = Math.min(i + BATCH, total);
+        for (let j = i; j < end; j++) {
+          const rec = analyzeGame(games[j], userId);
+          if (rec) records.push(rec);
+        }
+        onProgress?.(end, total);
+        if (end < total) await nextPaint();
+      }
+      return records;
+    }
+
+    function showLoading() {
+      resultsEl.innerHTML = `<div class="loading" role="status" aria-live="polite">
+        <p class="kicker">Compiling report</p>
+        <p class="loadline"><span id="lp-text">Starting</span><span class="caret" aria-hidden="true"></span></p>
+        <p class="loadsub" id="lp-sub"></p>
+        <div class="loadbar"><div class="loadbar-fill" id="lp-bar"></div></div>
+      </div>`;
+    }
+    function loadStep(text, sub, frac) {
+      const t = document.getElementById('lp-text'), s = document.getElementById('lp-sub'), b = document.getElementById('lp-bar');
+      if (t && text != null) t.textContent = text;
+      if (s) s.textContent = sub || '';
+      if (b && frac != null) b.style.width = Math.round(clamp01(frac) * 100) + '%';
+    }
+
     async function run() {
       const username = inputEl.value.trim();
       resultsEl.innerHTML = '';
+      setStatus('');
       if (!username) { setStatus('Enter your username first.'); inputEl.focus(); return; }
       runBtn.disabled = true;
+      showLoading();
       try {
         // 1. Profile lookup: existence, closed, and total game counts.
-        setStatus(`Looking up ${username} on Lichess...`);
+        loadStep(`Looking up ${username} on Lichess`, '', 0.04);
         let profile;
         try {
           profile = await fetchProfile(username);
@@ -889,20 +966,28 @@
         const rc = (profile.perfs?.rapid?.games || 0) + (profile.perfs?.classical?.games || 0);
         const totalAll = profile.count?.all || 0;
 
-        // 2. Fetch analyzed rapid/classical games.
-        setStatus(`Reading ${username}'s analyzed games...`);
+        // 2. Fetch analyzed games, streamed so the count climbs as they arrive.
+        loadStep('Reading your recent games', '0 games', 0.08);
         let games;
         try {
-          games = await fetchGames(username);
+          games = await fetchGames(username, n =>
+            loadStep('Reading your recent games', `${n} ${n === 1 ? 'game' : 'games'} read`,
+              0.08 + Math.min(n / CONFIG.MAX_GAMES, 1) * 0.37));
         } catch (e) {
           if (e.code === 404) return showError('not_found', { username });
           if (e.code === 429) return showError('rate_limit', {});
           return showError('network', { msg: e.message });
         }
-        const records = games.map(g => analyzeGame(g, username.toLowerCase())).filter(Boolean);
 
-        // 3. Enough analyzed games: diagnose.
+        // 3. Replay + analyze in batches so the count keeps moving.
+        loadStep('Replaying the moves', `0 of ${games.length} games`, 0.45);
+        const records = await analyzeAll(games, username.toLowerCase(), (done, total) =>
+          loadStep('Replaying the moves', `${done} of ${total} games`, 0.45 + (total ? done / total : 0) * 0.55));
+
+        // 4. Enough analyzed games: diagnose.
         if (records.length >= CONFIG.MIN_GAMES) {
+          loadStep('Writing up the diagnosis', `${records.length} games`, 1);
+          await nextPaint(); // let the bar finish before the report swaps in
           const agg = aggregate(records);
           const sc = score(agg);
           report(username, agg, sc);
@@ -911,19 +996,17 @@
           return;
         }
 
-        // 4. Not enough analyzed games: explain why, specifically.
-        setStatus('');
+        // 5. Not enough analyzed games: explain why, specifically.
         if (rc < CONFIG.MIN_GAMES) {
           return showError('too_few', { username, rc, fasterNote: totalAll - rc >= rc + 10 });
         }
-        // rc >= MIN games exist, but fewer than MIN are analyzed.
         if (records.length > 0) {
           return showError('none_analyzed', { username, rc, analyzed: records.length });
         }
         // Zero readable analyzed games: is anything readable at all? Only call
         // it "private" when the probe definitively comes back empty on success;
         // a failed probe is a rate-limit or network issue, not a private account.
-        setStatus('Checking your game history...');
+        loadStep('Checking your game history', '', 0.6);
         let anyGame;
         try {
           anyGame = await probeAnyGame(username);
@@ -931,7 +1014,6 @@
           if (e.code === 429) return showError('rate_limit', {});
           return showError('network', { msg: e.message });
         }
-        setStatus('');
         return showError(anyGame > 0 ? 'none_analyzed' : 'private', { username, rc, analyzed: 0 });
       } catch (err) {
         console.error(err);
