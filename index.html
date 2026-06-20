@@ -7,7 +7,7 @@
   <meta name="description" content="Free tool. Enter your Lichess username and Chess Checkup reads your analyzed rapid and classical games, names the one weakness costing you the most rating, shows the evidence, and gives one fix. No signup, no ads, no sponsors.">
   <meta name="theme-color" content="#f4f1e9">
   <!-- Content Security Policy: chess.js CDN module, Google Fonts, and the Lichess API only -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://lichess.org https://cdn.jsdelivr.net; img-src 'self' data:; base-uri 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://lichess.org https://cdn.jsdelivr.net; img-src 'self' data: blob:; base-uri 'none'">
   <!-- Open Graph / Twitter: link previews when shared on Reddit, etc. -->
   <meta property="og:type" content="website">
   <meta property="og:title" content="Chess Checkup">
@@ -86,6 +86,13 @@
     .exbanner { font-family: var(--mono); font-size: .78rem; line-height: 1.5; color: var(--soft); background: var(--panel); border-left: 3px solid var(--accent); padding: .6rem .85rem; margin-top: 2rem; }
     .exbanner .extag { color: var(--accent); text-transform: uppercase; letter-spacing: .12em; margin-right: .55em; }
     .exbanner + .specimen { margin-top: .85rem; }
+
+    .share { margin-top: 1.5rem; display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+    .share-label { font-family: var(--mono); font-size: .7rem; letter-spacing: .14em; text-transform: uppercase; color: var(--soft); }
+    .sharebtn { background: none; border: 0; padding: .15rem 0; font-family: var(--mono); font-size: .78rem; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; cursor: pointer; }
+    .sharebtn:hover { color: var(--ink); }
+    .sharebtn:disabled { color: var(--soft); text-decoration: none; cursor: default; }
+    .share-sep { color: var(--rule); font-family: var(--mono); font-size: .78rem; }
     .kicker { font-family: var(--mono); font-size: .7rem; letter-spacing: .16em; text-transform: uppercase; color: var(--soft); margin: 0 0 .55rem; }
 
     .card h2 { font-weight: 500; font-size: 1.75rem; line-height: 1.2; letter-spacing: -.01em; margin: 0 0 .7rem; }
@@ -154,7 +161,7 @@
       .intake-row { flex-direction: column; gap: .7rem; }
       #username { font-size: 16px; padding: .65rem .15rem; }
       #run { width: 100%; padding: .9rem; font-size: .82rem; }
-      .examplelink { padding: .45rem 0; }
+      .examplelink, .sharebtn { padding: .45rem 0; }
       .card h2 { font-size: 1.42rem; }
       .primary, .error, .refuse, .clean { padding: 1.2rem 1.2rem; }
       .fix { font-size: 1.1rem; }
@@ -168,7 +175,7 @@
       <p class="eyebrow">A checkup for the 1000 to 1800 improver</p>
       <h1>Chess Checkup</h1>
       <p class="lede">Enter your Lichess username. It reads your analyzed rapid and classical games and names the one weakness costing you the most rating, with the evidence and one thing to do about it.</p>
-      <p class="aside">Two of the five diagnoses tell you to buy nothing. I'd rather lose a sale than send you after a problem you don't have.</p>
+      <p class="aside">I'm a competitive player who got tired of not knowing which book would actually help, so I built this. Two of the five diagnoses tell you to buy nothing, and I'd rather lose a sale than send you after a problem you don't have.</p>
     </header>
 
     <section class="intake" aria-label="Run a checkup">
@@ -854,6 +861,132 @@
 
     const exampleBannerHTML = () => `<div class="exbanner"><span class="extag">Example</span>A real checkup of one public account. Enter your own Lichess username above to run yours.</div>`;
 
+    // ==================================================================
+    // Share: a downloadable PNG of the primary diagnosis card (hand-drawn
+    // on a canvas, no image library) plus a short text summary + link.
+    // ==================================================================
+    const SITE = ['localhost', '127.0.0.1', ''].includes(location.hostname) ? 'chess-checkup.vercel.app' : location.host;
+
+    function shareSummary(cat, agg) {
+      return `My Chess Checkup: the one weakness costing me the most rating is ${CATS[cat].name.toLowerCase()}, from ${agg.n} analyzed games. Run yours: https://${SITE}`;
+    }
+
+    function wrapLines(ctx, text, font, maxW) {
+      ctx.font = font;
+      const out = [];
+      let line = '';
+      for (const word of text.split(' ')) {
+        const test = line ? line + ' ' + word : word;
+        if (line && ctx.measureText(test).width > maxW) { out.push(line); line = word; }
+        else line = test;
+      }
+      if (line) out.push(line);
+      return out;
+    }
+
+    async function shareImageBlob(cat, agg, sc) {
+      try { await document.fonts.ready; } catch {}
+      const W = 1080, M = 36, PAD = 60, x = M + PAD, maxW = W - 2 * (M + PAD);
+      const css = getComputedStyle(document.documentElement);
+      const C = (k, fb) => (css.getPropertyValue(k).trim() || fb);
+      const paper = C('--paper', '#f4f1e9'), panel = C('--panel', '#efe9db'), ink = C('--ink', '#1c1813'),
+        soft = C('--soft', '#5d564a'), rule = C('--rule', '#d8cfbb'), accent = C('--accent', '#8a2a20');
+      const SERIF = 'Newsreader, Georgia, serif', MONO = "'DM Mono', monospace";
+      const HEAD_F = `600 64px ${SERIF}`, HEAD_LH = 78, EV_F = `400 34px ${SERIF}`, EV_LH = 50;
+
+      const headline = CATS[cat].name;
+      const evidence = `In the last ${agg.n} analyzed games, ${evidencePlain(cat, agg, sc.detail)}.`;
+      const conf = `Confidence: ${sc.clabel} · ${agg.n} analyzed games`;
+
+      const mc = document.createElement('canvas').getContext('2d');
+      const headLines = wrapLines(mc, headline, HEAD_F, maxW);
+      const evLines = wrapLines(mc, evidence, EV_F, maxW);
+
+      const yEyebrow = M + 70, yRule1 = yEyebrow + 30, yKicker = yRule1 + 50;
+      const headBase = []; let yy = yKicker + 14;
+      for (let i = 0; i < headLines.length; i++) headBase.push(yy += HEAD_LH);
+      yy += 34;
+      const evBase = [];
+      for (let i = 0; i < evLines.length; i++) evBase.push(yy += EV_LH);
+      const yConf = (yy += 44), yRule2 = yConf + 40, yFoot = yRule2 + 34;
+      const H = Math.round(yFoot + 50 + M);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext('2d');
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = paper; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = panel; ctx.fillRect(M, M, W - 2 * M, H - 2 * M);
+      ctx.strokeStyle = ink; ctx.lineWidth = 2; ctx.strokeRect(M + 1, M + 1, W - 2 * M - 2, H - 2 * M - 2);
+      ctx.fillStyle = accent; ctx.fillRect(M, M, 8, H - 2 * M);
+
+      const hr = y => { ctx.strokeStyle = rule; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(W - M - PAD, y); ctx.stroke(); };
+      const setLS = v => { try { ctx.letterSpacing = v; } catch {} };
+
+      ctx.fillStyle = soft; ctx.font = `500 22px ${MONO}`; setLS('3px');
+      ctx.fillText('CHESS CHECKUP', x, yEyebrow);
+      setLS('0px'); hr(yRule1);
+      ctx.fillStyle = accent; ctx.font = `500 24px ${MONO}`; setLS('3px');
+      ctx.fillText('YOUR NUMBER ONE LEAK', x, yKicker);
+      setLS('0px');
+      ctx.fillStyle = ink; ctx.font = HEAD_F;
+      headLines.forEach((ln, i) => ctx.fillText(ln, x, headBase[i]));
+      ctx.fillStyle = ink; ctx.font = EV_F;
+      evLines.forEach((ln, i) => ctx.fillText(ln, x, evBase[i]));
+      ctx.fillStyle = soft; ctx.font = `400 24px ${MONO}`;
+      ctx.fillText(conf, x, yConf);
+      hr(yRule2);
+      ctx.font = `500 22px ${MONO}`; setLS('1px');
+      ctx.fillStyle = ink; ctx.textAlign = 'left'; ctx.fillText(SITE, x, yFoot);
+      ctx.fillStyle = soft; ctx.textAlign = 'right'; ctx.fillText('free · no signup', W - M - PAD, yFoot);
+      ctx.textAlign = 'left'; setLS('0px');
+
+      return await new Promise((res, rej) => canvas.toBlob(b => b ? res(b) : rej(new Error('toBlob failed')), 'image/png'));
+    }
+
+    async function copyText(text) {
+      try { await navigator.clipboard.writeText(text); return true; }
+      catch {
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+          document.body.appendChild(ta); ta.select();
+          const ok = document.execCommand('copy'); ta.remove(); return ok;
+        } catch { return false; }
+      }
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+
+    const shareRowHTML = () => `<div class="share">
+        <span class="share-label">Share</span>
+        <button class="sharebtn" data-share="img" type="button">Download image</button>
+        <span class="share-sep" aria-hidden="true">·</span>
+        <button class="sharebtn" data-share="txt" type="button">Copy summary</button>
+      </div>`;
+
+    async function onShareImage(cat, agg, sc, btn) {
+      const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Rendering';
+      try {
+        downloadBlob(await shareImageBlob(cat, agg, sc), 'chess-checkup.png');
+        btn.textContent = 'Saved';
+      } catch (e) { console.error(e); btn.textContent = 'Could not save'; }
+      setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 2200);
+    }
+
+    async function onShareText(cat, agg, btn) {
+      const ok = await copyText(shareSummary(cat, agg));
+      const orig = btn.textContent;
+      btn.textContent = ok ? 'Copied' : 'Copy failed';
+      setTimeout(() => { btn.textContent = orig; }, 2000);
+    }
+
     function specimenLine(username, agg) {
       const speedStr = Object.keys(agg.speeds || {}).length ? Object.entries(agg.speeds).map(([k, v]) => `${v} ${k}`).join(', ') : 'no games';
       const ratingStr = agg.n ? ` &middot; rated ${agg.ratingMin}–${agg.ratingMax}` : '';
@@ -871,6 +1004,7 @@
         const cat = sc.primary;
         html += diagnosisCardHTML(cat, agg, sc);
         html += recCardHTML(cat, agg, sc);
+        html += shareRowHTML();
         html += rankedRemainderHTML(agg, sc, [cat]);
       } else { // tie
         const cats = sc.coLeaders.map(c => c.cat);
@@ -886,9 +1020,16 @@
           html += `<section class="card sub"><h2>${esc(CATS[c.cat].name)}</h2><p>In your last ${agg.n} analyzed games, ${esc(evidencePlain(c.cat, agg, sc.detail))}.</p></section>`;
           html += recCardHTML(c.cat, agg, sc);
         }
+        html += shareRowHTML();
         html += rankedRemainderHTML(agg, sc, cats);
       }
       root.innerHTML = html + technicalDetailsHTML(agg, sc) + disclosureHTML();
+
+      const shareEl = root.querySelector('.share');
+      if (shareEl) {
+        shareEl.querySelector('[data-share="img"]').addEventListener('click', e => onShareImage(sc.primary, agg, sc, e.currentTarget));
+        shareEl.querySelector('[data-share="txt"]').addEventListener('click', e => onShareText(sc.primary, agg, e.currentTarget));
+      }
     }
 
     // ==================================================================
