@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chess Checkup — board test harness</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cm-chessboard@8.12.12/assets/chessboard.css">
+  <style>
+    :root {
+      --paper:#f4f1e9; --panel:#efe9db; --ink:#1c1813; --soft:#5d564a;
+      --rule:#d8cfbb; --accent:#8a2a20; --good:#2f6b46;
+      --serif:Georgia,'Times New Roman',serif;
+      --mono:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--paper); color:var(--ink); font-family:var(--serif); line-height:1.5; }
+    main { max-width:520px; margin:0 auto; padding:2rem 1rem 3rem; }
+    .eyebrow { font-family:var(--mono); font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; color:var(--soft); margin:0 0 .6rem; }
+    h1 { font-weight:500; font-size:1.8rem; margin:0 0 .25rem; letter-spacing:-.01em; }
+    .prompt { color:var(--soft); margin:.2rem 0 1.2rem; }
+    .boardwrap { width:min(92vw,440px); margin:0 auto; }
+    .board { width:100%; border:3px solid var(--rule); border-radius:2px; transition:border-color .15s; }
+    .board[data-state="correct"] { border-color:var(--good); }
+    .board[data-state="wrong"] { border-color:var(--accent); }
+    .board[data-state="shown"] { border-color:var(--soft); }
+    .status { font-family:var(--mono); font-size:.95rem; line-height:1.4; min-height:2.6em; margin:1rem auto 0; width:min(92vw,440px); }
+    .status[data-kind="correct"] { color:var(--good); }
+    .status[data-kind="wrong"] { color:var(--accent); }
+    .actions { display:flex; gap:.6rem; margin:.6rem auto 0; width:min(92vw,440px); }
+    button { font-family:var(--mono); font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; padding:.6rem 1rem; border:1px solid var(--ink); background:var(--ink); color:var(--paper); border-radius:0; cursor:pointer; }
+    button#showme { background:var(--paper); color:var(--ink); }
+    button[hidden] { display:none; }
+    .meta { font-family:var(--mono); font-size:.7rem; color:var(--soft); margin:1.4rem auto 0; width:min(92vw,440px); word-break:break-all; border-top:1px solid var(--rule); padding-top:.7rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Chess Checkup · board test harness</p>
+    <h1>Find the move</h1>
+    <p class="prompt" id="prompt">White to move. There is one best move.</p>
+    <div class="boardwrap"><div class="board" id="board"></div></div>
+    <p class="status" id="status">Loading the board…</p>
+    <div class="actions">
+      <button id="showme" type="button" hidden>Show me</button>
+      <button id="reset" type="button">Reset</button>
+    </div>
+    <p class="meta" id="meta"></p>
+  </main>
+
+  <script type="module">
+    import { Chess } from 'https://cdn.jsdelivr.net/npm/chess.js@1.4.0/+esm';
+    import { Chessboard, INPUT_EVENT_TYPE, COLOR, BORDER_TYPE } from 'https://cdn.jsdelivr.net/npm/cm-chessboard@8.12.12/src/Chessboard.js';
+
+    // ---- The one hardcoded test position + its one correct move ----
+    // White to move: back-rank mate with Ra8#. No promotions possible (White
+    // has no pawns), which keeps this harness free of promotion handling.
+    const PUZZLE_FEN = '6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1';
+    const CORRECT = { from: 'a1', to: 'a8' };
+    const SOLUTION_SAN = 'Ra8#';
+
+    // game stays fixed at the puzzle position; clones do legality/SAN so a wrong
+    // attempt never advances the real state (retry from the same spot, no lockout).
+    const game = new Chess(PUZZLE_FEN);
+    let solved = false;
+    let wrongCount = 0;
+    let reverting = false;
+    let inputEnabled = false;
+
+    const boardEl = document.getElementById('board');
+    const statusEl = document.getElementById('status');
+    const showmeBtn = document.getElementById('showme');
+    const resetBtn = document.getElementById('reset');
+    const metaEl = document.getElementById('meta');
+
+    const board = new Chessboard(boardEl, {
+      position: PUZZLE_FEN,
+      assetsUrl: 'https://cdn.jsdelivr.net/npm/cm-chessboard@8.12.12/assets/',
+      orientation: COLOR.white,
+      responsive: true,
+      style: { cssClass: 'default', borderType: BORDER_TYPE.frame, pieces: { file: 'pieces/standard.svg' }, animationDuration: 280 },
+    });
+
+    // Idempotent enable/disable so Reset (and solve/show-me) never double-toggle,
+    // which cm-chessboard rejects with "moveInput already enabled".
+    function enableInput() { if (!inputEnabled) { board.enableMoveInput(inputHandler, COLOR.white); inputEnabled = true; } }
+    function disableInput() { if (inputEnabled) { board.disableMoveInput(); inputEnabled = false; } }
+
+    function setStatus(text, kind = '') {
+      statusEl.textContent = text;
+      statusEl.dataset.kind = kind;
+      boardEl.dataset.state = kind;
+    }
+    function updateMeta() {
+      metaEl.textContent = `solution ${SOLUTION_SAN}  ·  wrong tries: ${wrongCount}  ·  solved: ${solved}  ·  FEN: ${PUZZLE_FEN}`;
+    }
+    // Legality via a throwaway clone; returns the move object or null.
+    function tryMove(from, to) {
+      const clone = new Chess(game.fen());
+      try { return clone.move({ from, to, promotion: 'q' }); } catch { return null; }
+    }
+
+    function evaluate(from, to) {
+      if (from === CORRECT.from && to === CORRECT.to) {
+        solved = true;
+        disableInput();
+        showmeBtn.hidden = true;
+        setStatus(`Correct. ${SOLUTION_SAN} is the move.`, 'correct');
+      } else {
+        wrongCount += 1;
+        const mv = tryMove(from, to);
+        const san = mv ? mv.san : `${from}-${to}`;
+        setStatus(`${san}? Not it. Try again.`, 'wrong');
+        reverting = true;
+        setTimeout(async () => { await board.setPosition(game.fen(), true); reverting = false; }, 650);
+        if (wrongCount >= 2) showmeBtn.hidden = false;
+      }
+      updateMeta();
+    }
+
+    // cm-chessboard drives drag AND tap through this one handler.
+    function inputHandler(event) {
+      switch (event.type) {
+        case INPUT_EVENT_TYPE.moveInputStarted:
+          // only let a piece be picked up if it has a legal move (white to move)
+          return !solved && !reverting && game.moves({ square: event.square, verbose: true }).length > 0;
+        case INPUT_EVENT_TYPE.validateMoveInput:
+          // accept (render) any LEGAL move; reject illegal ones (snapback)
+          return !!tryMove(event.squareFrom, event.squareTo);
+        case INPUT_EVENT_TYPE.moveInputFinished:
+          if (!solved && event.legalMove && event.squareFrom && event.squareTo && event.squareFrom !== event.squareTo) {
+            evaluate(event.squareFrom, event.squareTo);
+          }
+          return;
+      }
+    }
+
+    async function showMe() {
+      solved = true;
+      disableInput();
+      showmeBtn.hidden = true;
+      await board.setPosition(game.fen(), false);
+      const c = new Chess(game.fen());
+      c.move({ from: CORRECT.from, to: CORRECT.to, promotion: 'q' });
+      await board.setPosition(c.fen(), true);
+      setStatus(`The move is ${SOLUTION_SAN}.`, 'shown');
+      updateMeta();
+    }
+
+    function reset() {
+      solved = false; wrongCount = 0; reverting = false;
+      showmeBtn.hidden = true;
+      disableInput();
+      board.setPosition(PUZZLE_FEN, true);
+      enableInput();
+      setStatus('Your move. Drag or tap a piece.', '');
+      updateMeta();
+    }
+
+    showmeBtn.addEventListener('click', showMe);
+    resetBtn.addEventListener('click', reset);
+
+    enableInput();
+    setStatus('Your move. Drag or tap a piece.', '');
+    updateMeta();
+
+    // Test hook (this is a harness): drive the same handler logic + mimic the
+    // board's visual move, so the legality/retry/show-me flow can be checked.
+    window.__boardtest = {
+      // Drives the SAME handler cm-chessboard calls (moveInputStarted ->
+      // validateMoveInput -> moveInputFinished), synchronously, without touching
+      // board animations (those need rAF, which the headless preview throttles).
+      simulate(from, to) {
+        if (inputHandler({ type: INPUT_EVENT_TYPE.moveInputStarted, square: from }) === false) {
+          return { pickedUp: false, status: statusEl.textContent, wrongCount, solved };
+        }
+        const legal = inputHandler({ type: INPUT_EVENT_TYPE.validateMoveInput, squareFrom: from, squareTo: to });
+        inputHandler({ type: INPUT_EVENT_TYPE.moveInputFinished, squareFrom: from, squareTo: to, legalMove: legal });
+        return { pickedUp: true, legal, status: statusEl.textContent, wrongCount, solved, showmeHidden: showmeBtn.hidden };
+      },
+      state: () => ({ solved, wrongCount, status: statusEl.textContent, showmeHidden: showmeBtn.hidden, boardPos: board.getPosition().split(' ')[0] }),
+      clearRevert: () => { reverting = false; },   // test-only: the revert flag normally clears after the (rAF) animation
+      reset, showMe,
+    };
+  </script>
+</body>
+</html>
