@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Chess Checkup — board test harness</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cm-chessboard@8.12.12/assets/chessboard.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cm-chessboard@8.12.12/assets/extensions/markers/markers.css">
   <style>
     :root {
       --paper:#f4f1e9; --panel:#efe9db; --ink:#1c1813; --soft:#5d564a;
@@ -50,6 +51,7 @@
   <script type="module">
     import { Chess } from 'https://cdn.jsdelivr.net/npm/chess.js@1.4.0/+esm';
     import { Chessboard, INPUT_EVENT_TYPE, COLOR, BORDER_TYPE } from 'https://cdn.jsdelivr.net/npm/cm-chessboard@8.12.12/src/Chessboard.js';
+    import { Markers, MARKER_TYPE } from 'https://cdn.jsdelivr.net/npm/cm-chessboard@8.12.12/src/extensions/markers/Markers.js';
 
     // ---- The one hardcoded test position + its one correct move ----
     // White to move: back-rank mate with Ra8#. No promotions possible (White
@@ -78,6 +80,7 @@
       orientation: COLOR.white,
       responsive: true,
       style: { cssClass: 'default', borderType: BORDER_TYPE.frame, pieces: { file: 'pieces/standard.svg' }, animationDuration: 280 },
+      extensions: [{ class: Markers, props: { autoMarkers: null } }], // we drive markers ourselves (selection only)
     });
 
     // Idempotent enable/disable so Reset (and solve/show-me) never double-toggle,
@@ -117,15 +120,35 @@
       updateMeta();
     }
 
+    // Selection feedback via the markers extension: frame the picked-up square
+    // and dot every legal destination (a ring for captures). Both tap and drag
+    // start with moveInputStarted, so both show the hints; cleared on commit.
+    function showSelection(square) {
+      board.removeMarkers();
+      board.addMarker(MARKER_TYPE.frame, square);
+      for (const m of game.moves({ square, verbose: true })) {
+        const capture = m.flags.includes('c') || m.flags.includes('e');
+        board.addMarker(capture ? MARKER_TYPE.circle : MARKER_TYPE.dot, m.to);
+      }
+    }
+    function clearSelection() { board.removeMarkers(); }
+
     // cm-chessboard drives drag AND tap through this one handler.
     function inputHandler(event) {
       switch (event.type) {
-        case INPUT_EVENT_TYPE.moveInputStarted:
+        case INPUT_EVENT_TYPE.moveInputStarted: {
           // only let a piece be picked up if it has a legal move (white to move)
-          return !solved && !reverting && game.moves({ square: event.square, verbose: true }).length > 0;
+          const allowed = !solved && !reverting && game.moves({ square: event.square, verbose: true }).length > 0;
+          if (allowed) showSelection(event.square); else clearSelection();
+          return allowed;
+        }
         case INPUT_EVENT_TYPE.validateMoveInput:
+          clearSelection(); // a destination was chosen: drop the selection hints
           // accept (render) any LEGAL move; reject illegal ones (snapback)
           return !!tryMove(event.squareFrom, event.squareTo);
+        case INPUT_EVENT_TYPE.moveInputCanceled:
+          clearSelection(); // deselected, dragged back, or tapped an illegal square
+          return;
         case INPUT_EVENT_TYPE.moveInputFinished:
           if (!solved && event.legalMove && event.squareFrom && event.squareTo && event.squareFrom !== event.squareTo) {
             evaluate(event.squareFrom, event.squareTo);
@@ -138,6 +161,7 @@
       solved = true;
       disableInput();
       showmeBtn.hidden = true;
+      board.removeMarkers();
       await board.setPosition(game.fen(), false);
       const c = new Chess(game.fen());
       c.move({ from: CORRECT.from, to: CORRECT.to, promotion: 'q' });
@@ -149,6 +173,7 @@
     function reset() {
       solved = false; wrongCount = 0; reverting = false;
       showmeBtn.hidden = true;
+      board.removeMarkers();
       disableInput();
       board.setPosition(PUZZLE_FEN, true);
       enableInput();
@@ -179,6 +204,13 @@
       },
       state: () => ({ solved, wrongCount, status: statusEl.textContent, showmeHidden: showmeBtn.hidden, boardPos: board.getPosition().split(' ')[0] }),
       clearRevert: () => { reverting = false; },   // test-only: the revert flag normally clears after the (rAF) animation
+      // tap a piece (first tap): fire moveInputStarted and report the markers shown
+      select(square) {
+        const allowed = inputHandler({ type: INPUT_EVENT_TYPE.moveInputStarted, square });
+        return { allowed, markers: board.getMarkers().map(m => ({ square: m.square, cls: m.type.class })) };
+      },
+      cancel() { inputHandler({ type: INPUT_EVENT_TYPE.moveInputCanceled, squareFrom: null, squareTo: null }); return board.getMarkers().length; },
+      markers: () => board.getMarkers().map(m => ({ square: m.square, cls: m.type.class })),
       reset, showMe,
     };
   </script>
