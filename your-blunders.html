@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chess Checkup: Your own blunders</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cm-chessboard@8.12.12/assets/chessboard.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cm-chessboard@8.12.12/assets/extensions/markers/markers.css">
+  <style>
+    :root {
+      --paper:#f4f1e9; --panel:#efe9db; --ink:#1c1813; --soft:#5d564a;
+      --rule:#d8cfbb; --accent:#8a2a20; --good:#2f6b46;
+      --serif:Georgia,'Times New Roman',serif;
+      --mono:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--paper); color:var(--ink); font-family:var(--serif); line-height:1.5; }
+    main { max-width:520px; margin:0 auto; padding:2rem 1rem 3rem; }
+    .eyebrow { font-family:var(--mono); font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; color:var(--soft); margin:0 0 .6rem; }
+    h1 { font-weight:500; font-size:1.8rem; margin:0 0 .25rem; letter-spacing:-.01em; }
+    .lede { color:var(--soft); margin:.2rem 0 1.2rem; }
+    .intake { display:flex; gap:.5rem; margin:0 0 1rem; }
+    #username { flex:1; min-width:0; font-family:var(--mono); font-size:1rem; color:var(--ink); background:transparent; border:0; border-bottom:1.5px solid var(--ink); padding:.5rem .15rem; border-radius:0; }
+    #username:focus { outline:none; border-bottom-color:var(--accent); }
+    button { font-family:var(--mono); font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; padding:.6rem 1rem; border:1px solid var(--ink); background:var(--ink); color:var(--paper); border-radius:0; cursor:pointer; }
+    button.ghost { background:var(--paper); color:var(--ink); }
+    button:disabled { opacity:.45; cursor:default; }
+    button[hidden] { display:none; }
+
+    .progress { font-family:var(--mono); font-size:.72rem; letter-spacing:.04em; color:var(--soft); text-transform:uppercase; margin:0 0 .5rem; min-height:1em; }
+    .boardwrap { width:min(92vw,440px); margin:0 auto; }
+    .board { width:100%; border:3px solid var(--rule); border-radius:2px; transition:border-color .15s; }
+    .board[data-state="correct"] { border-color:var(--good); }
+    .board[data-state="wrong"] { border-color:var(--accent); }
+    .board[data-state="shown"] { border-color:var(--soft); }
+    .prompt { font-size:1.05rem; margin:1rem auto 0; width:min(92vw,440px); min-height:1.4em; }
+    .status { font-family:var(--mono); font-size:.92rem; line-height:1.45; min-height:3.6em; margin:.7rem auto 0; width:min(92vw,440px); }
+    .status[data-kind="correct"] { color:var(--good); }
+    .status[data-kind="wrong"] { color:var(--accent); }
+    .actions { display:flex; gap:.6rem; margin:.5rem auto 0; width:min(92vw,440px); }
+    .note { font-family:var(--mono); font-size:.72rem; color:var(--soft); margin:1.4rem auto 0; width:min(92vw,440px); word-break:break-word; border-top:1px solid var(--rule); padding-top:.7rem; }
+    .big { font-size:1.15rem; line-height:1.5; }
+    a { color:var(--accent); }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Chess Checkup · your own blunders</p>
+    <h1>Your own blunders</h1>
+    <p class="lede">Real positions from your games, one move before you blundered. Find the move you missed. Then see what you actually played.</p>
+
+    <div class="intake">
+      <input id="username" value="Ari_Ferrari_0" aria-label="Lichess username" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <button id="load" type="button">Find my blunders</button>
+    </div>
+    <p class="progress" id="progress"></p>
+
+    <div id="trainer" hidden>
+      <div class="boardwrap"><div class="board" id="board"></div></div>
+      <p class="prompt" id="prompt"></p>
+      <p class="status" id="status"></p>
+      <div class="actions">
+        <button id="showme" type="button" class="ghost" hidden>Show me</button>
+        <button id="next" type="button" hidden>Next</button>
+      </div>
+    </div>
+
+    <div id="message" hidden><p class="big" id="messageText"></p></div>
+    <p class="note" id="note"></p>
+  </main>
+
+  <script type="module">
+    import { Chess } from 'https://cdn.jsdelivr.net/npm/chess.js@1.4.0/+esm';
+    import { Chessboard, INPUT_EVENT_TYPE, COLOR, BORDER_TYPE } from 'https://cdn.jsdelivr.net/npm/cm-chessboard@8.12.12/src/Chessboard.js';
+    import { Markers, MARKER_TYPE } from 'https://cdn.jsdelivr.net/npm/cm-chessboard@8.12.12/src/extensions/markers/Markers.js';
+
+    const ASSETS = 'https://cdn.jsdelivr.net/npm/cm-chessboard@8.12.12/assets/';
+    const MAX_POSITIONS = 12;     // a session
+    const BLUNDER_SWING = 200;    // cp lost (user POV) to count as a blunder, matches the diagnosis
+    const SANITY_CP = 500;        // ignore swings from already-decided positions
+
+    const el = id => document.getElementById(id);
+    const progressEl = el('progress'), trainerEl = el('trainer'), boardEl = el('board'),
+      promptEl = el('prompt'), statusEl = el('status'), showmeBtn = el('showme'),
+      nextBtn = el('next'), messageEl = el('message'), messageTextEl = el('messageText'),
+      noteEl = el('note'), loadBtn = el('load'), inputEl = el('username');
+
+    // ---- state ----
+    let board = null, positions = [], curIdx = 0, cur = null, game = null;
+    let wrongCount = 0, reverting = false, revealing = false, inputEnabled = false, gen = 0;
+
+    // ---- helpers ----
+    const evW = e => !e ? null : (typeof e.eval === 'number' ? Math.max(-1000, Math.min(1000, e.eval)) : (typeof e.mate === 'number' ? (e.mate > 0 ? 1000 : -1000) : null));
+    const setStatus = (text, kind = '') => { statusEl.textContent = text; statusEl.dataset.kind = kind; boardEl.dataset.state = kind; };
+
+    function enableInput(color) {
+      disableInput();
+      board.enableMoveInput(inputHandler, color === 'w' ? COLOR.white : COLOR.black);
+      inputEnabled = true;
+    }
+    function disableInput() { if (inputEnabled) { board.disableMoveInput(); inputEnabled = false; } }
+
+    function showSelection(square) {
+      board.removeMarkers();
+      board.addMarker(MARKER_TYPE.frame, square);
+      for (const m of game.moves({ square, verbose: true })) {
+        const capture = m.flags.includes('c') || m.flags.includes('e');
+        board.addMarker(capture ? MARKER_TYPE.circle : MARKER_TYPE.dot, m.to);
+      }
+    }
+    const clearSelection = () => board.removeMarkers();
+    function tryMove(from, to, promo) {
+      const c = new Chess(cur.fenBefore);
+      try { return c.move({ from, to, promotion: promo || 'q' }); } catch { return null; }
+    }
+
+    // ---- extraction: the user's real blunders, position-before + engine best ----
+    function extractBlunders(games, userId) {
+      const out = [];
+      for (const g of games) {
+        const color = g.players.white.user?.id === userId ? 'w' : g.players.black.user?.id === userId ? 'b' : null;
+        if (!color || !Array.isArray(g.analysis)) continue;
+        const moves = (g.moves || '').split(' ').filter(Boolean);
+        const wIsUser = color === 'w', sign = wIsUser ? 1 : -1;
+        const ch = new Chess();
+        for (let i = 0; i < moves.length; i++) {
+          const isUser = wIsUser ? i % 2 === 0 : i % 2 === 1;
+          const e = g.analysis[i], fenBefore = ch.fen();
+          const bW = i === 0 ? 0 : evW(g.analysis[i - 1]), aW = evW(e);
+          let played; try { played = ch.move(moves[i]); } catch { break; }
+          if (!isUser || !e || !e.best || bW == null || aW == null) continue;
+          const before = sign * bW, after = sign * aW, swing = before - after;
+          if (swing < BLUNDER_SWING || Math.abs(bW) > SANITY_CP) continue;
+          let bestSan = e.best, fenAfterBest = null;
+          try { const cb = new Chess(fenBefore); const mb = cb.move({ from: e.best.slice(0, 2), to: e.best.slice(2, 4), promotion: e.best.slice(4) || 'q' }); bestSan = mb.san; fenAfterBest = cb.fen(); } catch {}
+          let fenAfterUser = null;
+          try { const cu = new Chess(fenBefore); cu.move(moves[i]); fenAfterUser = cu.fen(); } catch {}
+          if (!fenAfterBest || !fenAfterUser) continue;
+          out.push({ gameId: g.id, ply: i, userColor: color, fenBefore, bestUci: e.best, bestSan, fenAfterBest,
+            userSan: played.san, userFrom: played.from, userTo: played.to, userPromo: played.promotion || null, fenAfterUser,
+            before, after, swing, mateAfter: typeof e.mate === 'number', moveNo: Math.floor(i / 2) + 1 });
+        }
+      }
+      // meaningful puzzles first (you were not already lost), recent order preserved
+      const meaningful = out.filter(b => b.before >= -150);
+      const rest = out.filter(b => b.before < -150);
+      return { all: out, queue: meaningful.concat(rest).slice(0, MAX_POSITIONS) };
+    }
+
+    // ---- roast: scaled to how bad the blunder actually was ----
+    function roastFor(b, i) {
+      const wonToLost = b.before >= 150 && b.after <= -100;   // had a real edge, now losing
+      const threwAway = b.before >= 150 && b.after <= 80;      // had a real edge, now gone
+      const intoLosing = b.before >= -120 && b.after <= -150;  // was roughly okay, now losing
+      const huge = b.swing >= 500 || b.after <= -600;
+      let tier = 1;
+      if (huge || wonToLost || (threwAway && b.swing >= 400) || (intoLosing && b.swing >= 380)) tier = 3;
+      else if (b.swing >= 320 || intoLosing || threwAway) tier = 2;
+      if (tier === 3 && b.mateAfter && b.after <= -900) return 'You walked into a forced mate. We can quietly move on.';
+      if (tier === 3 && (wonToLost || threwAway)) return 'You were winning. Then you played that.';
+      if (tier === 3 && intoLosing) return 'That is the move that lost you the game.';
+      const lines = {
+        1: ['Not a catastrophe. There was just better.', 'A small one. The cleaner move was right there.', 'Marginal slip. You will live.'],
+        2: ['That handed back real ground.', 'Oof. The edge was right there and you let it go.', 'This is where it started to slip.'],
+        3: ['Look at this. A genuinely rough one.', 'From good to bad in a single move.', 'The kind of move you replay later and wince.'],
+      };
+      const arr = lines[tier];
+      return arr[i % arr.length];
+    }
+
+    // ---- the board input handler (drag + tap, legal-move markers) ----
+    function inputHandler(event) {
+      switch (event.type) {
+        case INPUT_EVENT_TYPE.moveInputStarted: {
+          const allowed = !revealing && !reverting && !cur.done && game.moves({ square: event.square, verbose: true }).length > 0;
+          if (allowed) showSelection(event.square); else clearSelection();
+          return allowed;
+        }
+        case INPUT_EVENT_TYPE.validateMoveInput:
+          clearSelection();
+          return !!tryMove(event.squareFrom, event.squareTo);
+        case INPUT_EVENT_TYPE.moveInputCanceled:
+          clearSelection();
+          return;
+        case INPUT_EVENT_TYPE.moveInputFinished:
+          if (!cur.done && event.legalMove && event.squareFrom && event.squareTo && event.squareFrom !== event.squareTo) {
+            attempt(event.squareFrom, event.squareTo);
+          }
+          return;
+      }
+    }
+
+    function attempt(from, to) {
+      const piece = game.get(from);
+      let promo = null;
+      if (piece && piece.type === 'p' && (to[1] === '8' || to[1] === '1')) {
+        // no promotion picker in the board, so if the engine's best from this square is an
+        // underpromotion, credit that piece; otherwise queen. Keeps underpromotion bests solvable.
+        promo = (cur.bestUci.slice(0, 2) === from && cur.bestUci.slice(2, 4) === to && cur.bestUci[4]) ? cur.bestUci[4] : 'q';
+      }
+      const uci = from + to + (promo || '');
+      let correct = uci === cur.bestUci;
+      if (!correct) { // tolerance: an alternate move that still delivers mate is equally good
+        try { const c = new Chess(cur.fenBefore); c.move({ from, to, promotion: promo || 'q' }); correct = c.isCheckmate(); } catch {}
+      }
+      if (correct) onSolved(); else onWrong(from, to);
+    }
+
+    function onWrong(from, to) {
+      wrongCount += 1;
+      const mv = tryMove(from, to);
+      setStatus(`${mv ? mv.san : from + '-' + to}? Not the one. Try again.`, 'wrong');
+      reverting = true;
+      const g = gen;
+      setTimeout(() => {
+        if (g !== gen) return;             // a new position/run started; ignore
+        if (cur.done) { reverting = false; return; } // solved or shown in the meantime; do not clobber it
+        board.setPosition(cur.fenBefore, true);
+        reverting = false;
+      }, 600);
+      if (wrongCount >= 2) showmeBtn.hidden = false;
+    }
+
+    function onSolved() {
+      cur.done = true;
+      disableInput();
+      clearSelection();
+      showmeBtn.hidden = true;
+      setStatus(`Yes. ${cur.bestSan} was the move.`, 'correct');
+      reveal(true);
+    }
+
+    function doShowMe() {
+      cur.done = true;
+      disableInput();
+      clearSelection();
+      showmeBtn.hidden = true;
+      setStatus(`The move was ${cur.bestSan}.`, 'shown');
+      board.setPosition(cur.fenAfterBest, true);
+      const g = gen;
+      setTimeout(() => { if (g === gen) reveal(false); }, 1200);
+    }
+
+    // The reveal: a beat, then play their actual blunder, then the (scaled) roast.
+    // Uses setTimeout (not awaited animations) so the text lands even if a frame stalls,
+    // and a generation token so a stale reveal never writes onto a new position.
+    function reveal(solved) {
+      revealing = true;
+      disableInput();
+      const g = gen;
+      const lead = solved ? `Yes. ${cur.bestSan} was the move. ` : `${cur.bestSan} was the move. `;
+      setStatus(lead + 'Now, what you actually did...', solved ? 'correct' : 'shown');
+      setTimeout(() => {
+        if (g !== gen) return;
+        board.setPosition(cur.fenBefore, false);
+        setTimeout(() => {
+          if (g !== gen) return;
+          board.setPosition(cur.fenAfterUser, true);
+          setStatus(`You played ${cur.userSan}. ${cur.roast}`, 'wrong');
+          revealing = false;
+          nextBtn.hidden = false;
+          nextBtn.focus();
+        }, 350);
+      }, 1000);
+    }
+
+    function loadPosition(idx) {
+      gen++;                  // invalidate any pending revert/reveal timeouts from the last position
+      curIdx = idx;
+      cur = positions[idx];
+      cur.done = false;
+      wrongCount = 0; reverting = false; revealing = false;
+      cur.roast = roastFor(cur, idx);
+      game = new Chess(cur.fenBefore);
+      const want = cur.userColor === 'w' ? COLOR.white : COLOR.black;
+      if (board.getOrientation() !== want) board.setOrientation(want);
+      board.setPosition(cur.fenBefore, false);
+      board.removeMarkers();
+      enableInput(cur.userColor);
+      showmeBtn.hidden = true;
+      nextBtn.hidden = true;
+      promptEl.textContent = `You are ${cur.userColor === 'w' ? 'White' : 'Black'} and you are about to blunder. Find the move you missed.`;
+      setStatus('Drag or tap a piece.', '');
+      progressEl.textContent = `Blunder ${idx + 1} of ${positions.length}`;
+    }
+
+    function nextPosition() {
+      if (curIdx + 1 < positions.length) loadPosition(curIdx + 1);
+      else finish();
+    }
+
+    function finish() {
+      gen++;                  // invalidate any pending timeouts
+      disableInput();
+      if (board) board.removeMarkers();
+      trainerEl.hidden = true;
+      messageEl.hidden = false;
+      messageTextEl.textContent = `That is all ${positions.length}. The way to stop making these is to keep seeing them. Run it again whenever you want another round.`;
+      progressEl.textContent = `Done. ${positions.length} blunders.`;
+    }
+
+    // ---- fetch + run ----
+    async function fetchGames(username) {
+      const params = new URLSearchParams({ max: 100, rated: true, perfType: 'rapid,classical', analysed: true, evals: true, clocks: true, opening: true, sort: 'dateDesc' });
+      const res = await fetch(`https://lichess.org/api/user/${encodeURIComponent(username)}`);
+      if (res.status === 404) throw new Error(`No Lichess account called "${username}".`);
+      const gres = await fetch(`https://lichess.org/api/games/user/${encodeURIComponent(username)}?${params}`, { headers: { Accept: 'application/x-ndjson' } });
+      if (!gres.ok) throw new Error(`Lichess responded ${gres.status}.`);
+      const text = await gres.text();
+      return text.split('\n').filter(Boolean).map(l => JSON.parse(l));
+    }
+
+    async function run() {
+      const username = inputEl.value.trim();
+      if (!username) { progressEl.textContent = 'Enter your username first.'; return; }
+      loadBtn.disabled = true;
+      gen++;                  // invalidate any timeouts still pending from a previous run
+      trainerEl.hidden = true; messageEl.hidden = true; noteEl.textContent = '';
+      progressEl.textContent = `Reading ${username}'s analyzed games...`;
+      let games;
+      try { games = await fetchGames(username); }
+      catch (e) { progressEl.textContent = e.message; loadBtn.disabled = false; return; }
+
+      const { all, queue } = extractBlunders(games, username.toLowerCase());
+      positions = queue;
+
+      if (positions.length === 0) {
+        trainerEl.hidden = true;
+        messageEl.hidden = false;
+        messageTextEl.textContent = `We could not find clean blunder positions in ${username}'s analyzed rapid and classical games. Either there are too few analyzed games, or you simply did not leave many clean tactical blunders to train on. Get a few more games analyzed on Lichess and try again.`;
+        progressEl.textContent = 'No trainable blunders found.';
+        loadBtn.disabled = false;
+        return;
+      }
+
+      // build a fresh board oriented to the first position
+      if (board) { board.destroy(); board = null; }
+      boardEl.innerHTML = '';
+      board = new Chessboard(boardEl, {
+        position: positions[0].fenBefore,
+        orientation: positions[0].userColor === 'w' ? COLOR.white : COLOR.black,
+        assetsUrl: ASSETS,
+        responsive: true,
+        style: { cssClass: 'default', borderType: BORDER_TYPE.frame, pieces: { file: 'pieces/standard.svg' }, animationDuration: 280 },
+        extensions: [{ class: Markers, props: { autoMarkers: null } }],
+      });
+      messageEl.hidden = true;
+      trainerEl.hidden = false;
+      noteEl.textContent = `Found ${all.length} of your own blundered positions across these games. Showing ${positions.length}, most recent first (ones where you were already losing come last).`;
+      loadBtn.disabled = false;
+      loadPosition(0);
+    }
+
+    loadBtn.addEventListener('click', run);
+    inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+    showmeBtn.addEventListener('click', doShowMe);
+    nextBtn.addEventListener('click', nextPosition);
+
+    // Test hook (harness): drive the same handler logic synchronously.
+    window.__bt = {
+      count: () => positions.length,
+      cur: () => cur && ({ idx: curIdx, color: cur.userColor, bestUci: cur.bestUci, bestSan: cur.bestSan, userSan: cur.userSan, swing: cur.swing, before: cur.before, after: cur.after, roast: cur.roast, done: cur.done }),
+      select: (sq) => ({ allowed: inputHandler({ type: INPUT_EVENT_TYPE.moveInputStarted, square: sq }), markers: board.getMarkers().map(m => ({ square: m.square, cls: m.type.class })) }),
+      simulate: (from, to) => {
+        const started = inputHandler({ type: INPUT_EVENT_TYPE.moveInputStarted, square: from });
+        if (started === false) return { pickedUp: false, status: statusEl.textContent };
+        const legal = inputHandler({ type: INPUT_EVENT_TYPE.validateMoveInput, squareFrom: from, squareTo: to });
+        inputHandler({ type: INPUT_EVENT_TYPE.moveInputFinished, squareFrom: from, squareTo: to, legalMove: legal });
+        return { pickedUp: true, legal, status: statusEl.textContent, wrongCount, done: cur.done, showmeHidden: showmeBtn.hidden };
+      },
+      status: () => statusEl.textContent,
+      clearRevert: () => { reverting = false; },
+      next: nextPosition,
+      roastSamples: () => positions.map((b, i) => ({ swing: b.swing, before: b.before, after: b.after, roast: roastFor(b, i) })),
+    };
+  </script>
+</body>
+</html>
