@@ -4,17 +4,26 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Chess Checkup: the one weakness costing you the most rating</title>
-  <meta name="description" content="Free tool. Enter your Lichess username and Chess Checkup reads your analyzed rapid and classical games, names the one weakness costing you the most rating, shows the evidence, and gives one fix. No signup, no ads, no sponsors.">
+  <meta name="description" content="Enter your Lichess username and Chess Checkup names the one weakness costing you the most rating, with the evidence and one honest fix. Free, no signup, no sponsors.">
   <meta name="theme-color" content="#f4f1e9">
+  <!-- Favicon: the report-card mark (dark chip, oxblood spine, two light lines), inline SVG -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231c1813'/%3E%3Crect x='6' y='8' width='3.5' height='16' rx='1.75' fill='%238a2a20'/%3E%3Crect x='12.5' y='10' width='13' height='3.5' rx='1.75' fill='%23f4f1e9'/%3E%3Crect x='12.5' y='18' width='9' height='3.5' rx='1.75' fill='%23efe9db'/%3E%3C/svg%3E">
   <!-- Content Security Policy: chess.js CDN module, Google Fonts, and the Lichess API only -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://lichess.org https://cdn.jsdelivr.net; img-src 'self' data: blob:; base-uri 'none'">
-  <!-- Open Graph / Twitter: link previews when shared on Reddit, etc. -->
+  <!-- Open Graph / Twitter: a clean card when the link is pasted into Reddit, Discord, iMessage, etc. -->
   <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Chess Checkup">
+  <meta property="og:url" content="https://chess-checkup.vercel.app/">
   <meta property="og:title" content="Chess Checkup">
-  <meta property="og:description" content="Enter your Lichess username. It names the one weakness costing you the most rating, with the evidence, plus one fix. Two of five diagnoses tell you to buy nothing.">
-  <meta name="twitter:card" content="summary">
+  <meta property="og:description" content="Enter your Lichess username. It reads your analyzed rapid and classical games and names the one weakness costing you the most rating, with the evidence and one honest fix. Two of the five diagnoses tell you to buy nothing.">
+  <meta property="og:image" content="https://chess-checkup.vercel.app/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Chess Checkup: find the one weakness costing you the most rating.">
+  <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Chess Checkup">
-  <meta name="twitter:description" content="The one weakness costing you the most rating, with the evidence and one fix. Free, no signup.">
+  <meta name="twitter:description" content="The one weakness costing you the most rating, with the evidence and one honest fix. Free, no signup.">
+  <meta name="twitter:image" content="https://chess-checkup.vercel.app/og.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
