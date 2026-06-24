@@ -33,7 +33,17 @@ Two independent signals (a builder in the same space, and Ari's own gut) said th
 ## What stays true from the original spec
 One HTML file, vanilla JS, no framework (a chess board library and chess.js from CDN are allowed, since the board genuinely needs them). The diagnostic-report aesthetic. No AI tells. No em dashes. The honest, no-slop voice. Verify against real data, never guess. Show Ari the result before committing.
 
+## Puzzle tab scope decision (June 20)
+The diagnosis-to-puzzle-theme mapping was reviewed against real puzzle availability. Only two of the five categories map cleanly to puzzles, and those are the two biggest levers for improvers anyway:
+- Tactical safety: maps strongly (fork, pin, skewer, hangingPiece, discoveredAttack, deflection, and similar tactical motifs).
+- Endgames: maps cleanly (rookEndgame, pawnEndgame, queenEndgame, bishopEndgame, knightEndgame, plus zugzwang and promotion).
+The other three were deliberately dropped from the puzzle tab, not forced in: converting winning positions (the available themes really just mean "win material," which duplicates tactics), opening reliability (a repertoire problem, not a puzzle problem, see the planned opening trainer below), and time and decision-making (a process skill untimed puzzles cannot train). The served puzzle mix is weighted by the player's severity scores across the two mappable categories, in proportion to each other, not a fixed ratio, pulled in a rating band around the player's Lichess rating.
+
+## Planned future tab: Opening trainer
+Openings were kept out of the puzzle tab because they are a different kind of problem (drilling correct lines until known, closer to flashcards than to solving a position). The planned opening trainer is the personalized version that fits Chess Checkup's identity: the diagnosis already names the specific opening the player keeps failing with, so the trainer would surface the correct lines for that exact opening and let the player drill them. This is a real future build, not a someday-maybe, but it is deliberately sequenced AFTER the puzzle tab and the tab restructure, so it can be informed by how players actually use the blunder and puzzle tabs first. Ari has prior experience here (a chessreps-style opening trainer with study and drill modes), which lowers the lift. The bigger-effort, on-brand version (personalized to the diagnosed opening, needing a source of correct lines plus a drilling mechanic) is preferred over a generic "pick any opening and drill it" tool.
+
 ## Still parked (deliberate decisions, not now)
 - Rich written explanations of mistakes. Only if Ari later decides the AI tradeoff and cost are worth it. Default is off.
 - Progress over time (save a result, return later, see the weakness shrink). A strong future feature, but after the two trainers exist.
 - chess.com support and in-browser analysis of unanalyzed games. Both are projects, not touch-ups.
+- A final copy pass written by Ari himself, across the whole site and both trainers, replacing all placeholder and AI-sounding text. This is the agreed fix for voice: the words must be Ari's, since generated copy reads as AI. All text work waits for this pass.
