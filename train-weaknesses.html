@@ -47,6 +47,17 @@
     .note { font-family:var(--mono); font-size:.72rem; color:var(--soft); margin:1.4rem auto 0; width:min(92vw,452px); word-break:break-word; border-top:1px solid var(--rule); padding-top:.7rem; }
     .big { font-size:1.15rem; line-height:1.5; }
     a { color:var(--accent); }
+
+    /* Loading: a report being compiled (matches index.html) */
+    .loading { margin-top: 1.5rem; }
+    .loading .kicker { font-family:var(--mono); font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; color:var(--soft); margin:0 0 .65rem; }
+    .loadline { font-family:var(--mono); font-size:.98rem; color:var(--ink); margin:0; }
+    .caret { display:inline-block; width:.5ch; height:1.05em; background:var(--ink); margin-left:.14em; vertical-align:-.16em; animation:cc-blink 1.06s step-end infinite; }
+    @keyframes cc-blink { 0%, 50% { opacity:1; } 50.01%, 100% { opacity:0; } }
+    .loadsub { font-family:var(--mono); font-size:.8rem; color:var(--soft); margin:.45rem 0 0; min-height:1.1em; font-variant-numeric:tabular-nums; }
+    .loadbar { height:2px; background:var(--rule); margin-top:1.1rem; }
+    .loadbar-fill { height:100%; width:0; background:var(--ink); transition:width .25s ease; }
+    @media (prefers-reduced-motion: reduce) { .caret { animation:none; } .loadbar-fill { transition:none; } }
   </style>
 </head>
 <body>
@@ -60,6 +71,7 @@
       <button id="load" type="button">Build my training</button>
     </div>
     <p class="progress" id="progress"></p>
+    <div id="loadhost"></div>
 
     <div id="trainer" hidden>
       <div class="mix" id="mix"></div>
@@ -305,6 +317,9 @@
 
     let board = null, packs = null, session = [], curIdx = 0, cur = null, game = null, curFen = null;
     let wrongCount = 0, reverting = false, animating = false, inputEnabled = false, gen = 0;
+    let posHistory = [], viewIdx = 0, savedStatus = null;   // arrow-key review of the moves played so far
+
+    const nextPaint = () => new Promise(r => setTimeout(r, 0));   // setTimeout, not rAF: the headless preview never paints
 
     const setStatus = (text, kind = '') => { statusEl.textContent = text; statusEl.dataset.kind = kind; boardEl.dataset.state = kind; };
     const uciToMove = uci => ({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || undefined });
@@ -312,6 +327,34 @@
 
     function enableInput(color) { disableInput(); board.enableMoveInput(inputHandler, color === 'w' ? COLOR.white : COLOR.black); inputEnabled = true; }
     function disableInput() { if (inputEnabled) { board.disableMoveInput(); inputEnabled = false; } }
+
+    // ---- loading state: a report being compiled (matches index.html) ----
+    function showLoading() {
+      el('loadhost').innerHTML = `<div class="loading" role="status" aria-live="polite">
+        <p class="kicker">Building your training</p>
+        <p class="loadline"><span id="lp-text">Starting</span><span class="caret" aria-hidden="true"></span></p>
+        <p class="loadsub" id="lp-sub"></p>
+        <div class="loadbar"><div class="loadbar-fill" id="lp-bar"></div></div>
+      </div>`;
+    }
+    function loadStep(text, sub, frac) {
+      const t = el('lp-text'), s = el('lp-sub'), b = el('lp-bar');
+      if (t && text != null) t.textContent = text;
+      if (s) s.textContent = sub || '';
+      if (b && frac != null) b.style.width = Math.round(clamp01(frac) * 100) + '%';
+    }
+    const clearLoading = () => { el('loadhost').innerHTML = ''; };
+    // analyze in batches, yielding between them so the live count climbs
+    async function analyzeAll(games, userId, onProgress) {
+      const records = []; const total = games.length; const BATCH = 6;
+      for (let i = 0; i < total; i += BATCH) {
+        const end = Math.min(i + BATCH, total);
+        for (let j = i; j < end; j++) { const rec = analyzeGame(games[j], userId); if (rec) records.push(rec); }
+        onProgress?.(end, total);
+        if (end < total) await nextPaint();
+      }
+      return records;
+    }
 
     function showSelection(square) {
       board.removeMarkers();
@@ -323,6 +366,35 @@
     }
     const clearSelection = () => board.removeMarkers();
     function tryMove(from, to, promo) { const c = new Chess(curFen); try { return c.move({ from, to, promotion: promo || 'q' }); } catch { return null; } }
+
+    // ---- arrow-key review of the moves played so far (Lichess-style) ----
+    // posHistory holds every position from the puzzle start up to the live one;
+    // any new move appends to it and snaps the view back to live.
+    function pushPos(fen) { posHistory.push(fen); viewIdx = posHistory.length - 1; savedStatus = null; }
+    function goView(idx) {
+      const last = posHistory.length - 1;
+      idx = Math.max(0, Math.min(last, idx));
+      if (idx === viewIdx) return;
+      if (viewIdx === last && idx < last) savedStatus = { text: statusEl.textContent, kind: statusEl.dataset.kind || '' };
+      viewIdx = idx;
+      board.removeMarkers();
+      board.setPosition(posHistory[viewIdx], false);   // instant step, robust in headless
+      if (viewIdx === last) {
+        if (savedStatus) { setStatus(savedStatus.text, savedStatus.kind); savedStatus = null; }
+        if (!cur.done && !animating) enableInput(cur.solverColor);   // back to live: solving resumes
+      } else {
+        disableInput();
+        setStatus(`Reviewing position ${viewIdx} of ${last}. Right arrow returns to the puzzle.`, '');
+      }
+    }
+    function onKey(e) {
+      if (!board || !cur || trainerEl.hidden) return;
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault();
+      if (animating || reverting) return;   // ignore during transitions
+      goView(viewIdx + (e.key === 'ArrowLeft' ? -1 : 1));
+    }
 
     // ---- packs + session ----
     async function loadPacks() {
@@ -389,6 +461,7 @@
     function onCorrect(from, to, promo) {
       game.move({ from, to, promotion: promo || 'q' });
       curFen = game.fen();
+      pushPos(curFen);
       clearSelection();
       board.setPosition(curFen, false);
       if (cur.solIndex >= cur.movesArr.length - 1) { onSolved(); return; }
@@ -403,6 +476,7 @@
         if (g !== gen) return;
         game.move(uciToMove(replyUci));
         curFen = game.fen();
+        pushPos(curFen);
         board.setPosition(curFen, true);
         animating = false;
         enableInput(cur.solverColor);
@@ -438,7 +512,7 @@
       for (const uci of rest) { try { sanLine.push(sim.move(uciToMove(uci)).san); fens.push(sim.fen()); } catch { break; } }
       setStatus(`The line was ${sanLine.join(' ')}.`, 'shown');
       const g = gen, STEP_MS = 600;
-      fens.forEach((f, k) => setTimeout(() => { if (g !== gen) return; game.load(f); curFen = f; board.setPosition(f, true); }, (k + 1) * STEP_MS));
+      fens.forEach((f, k) => setTimeout(() => { if (g !== gen) return; game.load(f); curFen = f; pushPos(f); board.setPosition(f, true); }, (k + 1) * STEP_MS));
       setTimeout(() => {
         if (g !== gen) return;
         animating = false; showPuzzleLink();
@@ -466,6 +540,7 @@
       showmeBtn.hidden = true; nextBtn.hidden = true;
       el('puzzlelink').hidden = true; el('puzzlelink').innerHTML = '';
       curFen = cur.fen;
+      posHistory = [cur.fen]; viewIdx = 0; savedStatus = null;
       promptEl.textContent = `You are ${colorWord(cur.solverColor)}. Find the best move.`;
       setStatus('...', '');
       progressEl.textContent = `Puzzle ${idx + 1} of ${session.length} · ${cur.theme} · ${cur.rating}`;
@@ -475,6 +550,7 @@
         if (g !== gen) return;
         game.move(uciToMove(cur.movesArr[0]));
         curFen = game.fen();
+        pushPos(curFen);
         board.setPosition(curFen, true);
         animating = false;
         enableInput(cur.solverColor);
@@ -505,32 +581,38 @@
       const username = inputEl.value.trim();
       if (!username) { progressEl.textContent = 'Enter your username first.'; return; }
       loadBtn.disabled = true; gen++;
-      trainerEl.hidden = true; messageEl.hidden = true; noteEl.textContent = '';
-      progressEl.textContent = `Reading ${username}'s analyzed games...`;
-      let games, agg, sc;
+      trainerEl.hidden = true; messageEl.hidden = true; noteEl.textContent = ''; progressEl.textContent = '';
+      showLoading();
+      loadStep('Reading your recent games', '0 games', 0.08);
+      let games;
       try {
-        const [g] = await Promise.all([
-          fetchGames(username, k => { progressEl.textContent = `Reading ${username}'s games... ${k}`; }),
+        [games] = await Promise.all([
+          fetchGames(username, n => loadStep('Reading your recent games', `${n} ${n === 1 ? 'game' : 'games'} read`, 0.08 + Math.min(n / CONFIG.MAX_GAMES, 1) * 0.4)),
           loadPacks(),
         ]);
-        games = g;
       } catch (e) {
+        clearLoading();
         progressEl.textContent = e.code === 404 ? `No Lichess account called "${username}".` : e.code === 429 ? 'Lichess is rate limiting. Wait a minute and retry.' : `Could not load: ${e.message}`;
         loadBtn.disabled = false; return;
       }
       const userId = username.toLowerCase();
-      const records = games.map(g => analyzeGame(g, userId)).filter(Boolean);
+      loadStep('Replaying the moves', `0 of ${games.length} games`, 0.5);
+      const records = await analyzeAll(games, userId, (done, total) =>
+        loadStep('Replaying the moves', `${done} of ${total} games`, 0.5 + (total ? done / total : 0) * 0.45));
       if (records.length < CONFIG.MIN_GAMES) {
+        clearLoading();
         trainerEl.hidden = true; messageEl.hidden = false;
         messageTextEl.textContent = `Only ${records.length} analyzed rapid or classical games for ${username}. Need at least ${CONFIG.MIN_GAMES} to read your weaknesses. Get a few more games analyzed on Lichess and try again.`;
         progressEl.textContent = 'Not enough to build a session.'; loadBtn.disabled = false; return;
       }
-      agg = aggregate(records); sc = score(agg);
+      loadStep('Picking your puzzles', `${records.length} games`, 1); await nextPaint();
+      const agg = aggregate(records), sc = score(agg);
       const catTac = sc.scores.cat1, catEnd = sc.scores.cat2, R = agg.ratingMedian;
       window.__twSev = { catTac, catEnd, R, n: agg.n, clabel: sc.clabel, raws: sc.raws, scores: sc.scores };
       const info = buildSession(catTac, catEnd, R);
       session = info.session;
       if (session.length === 0) {
+        clearLoading();
         trainerEl.hidden = true; messageEl.hidden = false;
         messageTextEl.textContent = `Could not assemble puzzles near your rating (${R}). This should not happen with the bundled packs; tell Ari if it does.`;
         progressEl.textContent = 'No session.'; loadBtn.disabled = false; return;
@@ -544,6 +626,7 @@
         style: { cssClass: 'default', borderType: BORDER_TYPE.frame, pieces: { file: 'pieces/standard.svg' }, animationDuration: 280 },
         extensions: [{ class: Markers, props: { autoMarkers: null } }],
       });
+      clearLoading();
       messageEl.hidden = true; trainerEl.hidden = false;
       renderMix(info, catTac, catEnd, R);
       noteEl.textContent = `Based on ${agg.n} analyzed games (confidence ${sc.clabel}). Puzzles from the Lichess puzzle database, themes mapped to your two puzzle-trainable weaknesses.`;
@@ -555,6 +638,7 @@
     inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
     showmeBtn.addEventListener('click', doShowMe);
     nextBtn.addEventListener('click', nextPuzzle);
+    window.addEventListener('keydown', onKey);   // arrow-key review
 
     // Test hook (harness): drive the same handler logic synchronously.
     window.__tw = {
@@ -565,6 +649,9 @@
       severities: () => window.__twSev || null,
       forceRender: () => board.setPosition(curFen, false),
       status: () => statusEl.textContent,
+      review: () => ({ viewIdx, histLen: posHistory.length, atLive: viewIdx === posHistory.length - 1, boardPos: board.getPosition().split(' ')[0], inputEnabled }),
+      key: (dir) => { onKey({ key: dir < 0 ? 'ArrowLeft' : 'ArrowRight', preventDefault() {}, target: { tagName: 'BODY' } }); return { viewIdx, histLen: posHistory.length, atLive: viewIdx === posHistory.length - 1, boardPos: board.getPosition().split(' ')[0], status: statusEl.textContent, inputEnabled }; },
+      loadHostHTML: () => el('loadhost').innerHTML,
       select: (sq) => ({ allowed: inputHandler({ type: INPUT_EVENT_TYPE.moveInputStarted, square: sq }), markers: board.getMarkers().map(m => ({ square: m.square, cls: m.type.class })) }),
       simulate: (from, to) => {
         const started = inputHandler({ type: INPUT_EVENT_TYPE.moveInputStarted, square: from });
