@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chess Checkup: Train your weaknesses</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cm-chessboard@8.12.12/assets/chessboard.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cm-chessboard@8.12.12/assets/extensions/markers/markers.css">
+  <style>
+    :root {
+      --paper:#f4f1e9; --panel:#efe9db; --ink:#1c1813; --soft:#5d564a;
+      --rule:#d8cfbb; --accent:#8a2a20; --good:#2f6b46;
+      --serif:Georgia,'Times New Roman',serif;
+      --mono:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--paper); color:var(--ink); font-family:var(--serif); line-height:1.5; }
+    main { max-width:520px; margin:0 auto; padding:2rem 1rem 3rem; }
+    .eyebrow { font-family:var(--mono); font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; color:var(--soft); margin:0 0 .6rem; }
+    h1 { font-weight:500; font-size:1.8rem; margin:0 0 .25rem; letter-spacing:-.01em; }
+    .lede { color:var(--soft); margin:.2rem 0 1.2rem; }
+    .intake { display:flex; gap:.5rem; margin:0 0 1rem; }
+    #username { flex:1; min-width:0; font-family:var(--mono); font-size:1rem; color:var(--ink); background:transparent; border:0; border-bottom:1.5px solid var(--ink); padding:.5rem .15rem; border-radius:0; }
+    #username:focus { outline:none; border-bottom-color:var(--accent); }
+    button { font-family:var(--mono); font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; padding:.6rem 1rem; border:1px solid var(--ink); background:var(--ink); color:var(--paper); border-radius:0; cursor:pointer; }
+    button.ghost { background:var(--paper); color:var(--ink); }
+    button:disabled { opacity:.45; cursor:default; }
+    button[hidden] { display:none; }
+
+    .progress { font-family:var(--mono); font-size:.72rem; letter-spacing:.04em; color:var(--soft); text-transform:uppercase; margin:0 0 .5rem; min-height:1em; }
+    .mix { font-family:var(--mono); font-size:.72rem; color:var(--soft); margin:0 auto .8rem; width:min(92vw,452px); border-top:1px solid var(--rule); border-bottom:1px solid var(--rule); padding:.6rem 0; }
+    .mix .bars { display:flex; gap:.5rem; margin-top:.4rem; }
+    .mix .seg { height:.5rem; }
+    .mix .seg.tac { background:var(--accent); }
+    .mix .seg.end { background:var(--ink); }
+    .boardwrap { width:min(92vw,452px); margin:0 auto; }
+    .board { width:100%; border:3px solid var(--rule); border-radius:2px; transition:border-color .15s; }
+    .board[data-state="correct"] { border-color:var(--good); }
+    .board[data-state="wrong"] { border-color:var(--accent); }
+    .board[data-state="shown"] { border-color:var(--soft); }
+    .prompt { font-size:1.05rem; margin:1rem auto 0; width:min(92vw,452px); min-height:1.4em; }
+    .status { font-family:var(--mono); font-size:.92rem; line-height:1.45; min-height:3.2em; margin:.7rem auto 0; width:min(92vw,452px); }
+    .status[data-kind="correct"] { color:var(--good); }
+    .status[data-kind="wrong"] { color:var(--accent); }
+    .actions { display:flex; gap:.6rem; margin:.5rem auto 0; width:min(92vw,452px); }
+    .puzzlelink { font-family:var(--mono); font-size:.8rem; margin:.8rem auto 0; width:min(92vw,452px); }
+    .note { font-family:var(--mono); font-size:.72rem; color:var(--soft); margin:1.4rem auto 0; width:min(92vw,452px); word-break:break-word; border-top:1px solid var(--rule); padding-top:.7rem; }
+    .big { font-size:1.15rem; line-height:1.5; }
+    a { color:var(--accent); }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Chess Checkup · train your weaknesses</p>
+    <h1>Train your weaknesses</h1>
+    <p class="lede">Puzzles picked for the things your games say you are worst at, mixed in proportion to how bad each one is, around your rating.</p>
+
+    <div class="intake">
+      <input id="username" value="Ari_Ferrari_0" aria-label="Lichess username" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <button id="load" type="button">Build my training</button>
+    </div>
+    <p class="progress" id="progress"></p>
+
+    <div id="trainer" hidden>
+      <div class="mix" id="mix"></div>
+      <div class="boardwrap"><div class="board" id="board"></div></div>
+      <p class="prompt" id="prompt"></p>
+      <p class="status" id="status"></p>
+      <div class="actions">
+        <button id="showme" type="button" class="ghost" hidden>Show me</button>
+        <button id="next" type="button" hidden>Next</button>
+      </div>
+      <p class="puzzlelink" id="puzzlelink" hidden></p>
+    </div>
+
+    <div id="message" hidden><p class="big" id="messageText"></p></div>
+    <p class="note" id="note"></p>
+  </main>
+
+  <script type="module">
+    import { Chess } from 'https://cdn.jsdelivr.net/npm/chess.js@1.4.0/+esm';
+    import { Chessboard, INPUT_EVENT_TYPE, COLOR, BORDER_TYPE } from 'https://cdn.jsdelivr.net/npm/cm-chessboard@8.12.12/src/Chessboard.js';
+    import { Markers, MARKER_TYPE } from 'https://cdn.jsdelivr.net/npm/cm-chessboard@8.12.12/src/extensions/markers/Markers.js';
+
+    const ASSETS = 'https://cdn.jsdelivr.net/npm/cm-chessboard@8.12.12/assets/';
+
+    // ==================================================================
+    // DIAGNOSIS PIPELINE - copied verbatim from index.html so the puzzle
+    // mix is driven by the SAME tactical (cat1) and endgame (cat2) severity
+    // scores the checkup produces. (At step 5 this dedupes into the shared
+    // diagnosis; standalone for now.)
+    // ==================================================================
+    const CONFIG = {
+      MAX_GAMES: 100, PERF_TYPES: 'rapid,classical', MIN_GAMES: 15,
+      WIN_PERCENT_MULTIPLIER: -0.00368208, EVAL_CEILING_CP: 1000,
+      BLUNDER_SWING_CP: 200, SANITY_WINDOW_CP: 500, EQUALISH_CP: 200, MISSED_WIN_GAIN_CP: 250,
+      WINNING_CP: 300, WINNING_SUSTAIN_PLIES: 2,
+      ENDGAME_NONPAWN_POINTS: 13, ENDGAME_GOOD_ENTRY_CP: 200, OPENING_EXIT_PLY: 24,
+      DISASTER_EVAL_CP: -100, DISASTER_MIN_COUNT: 3,
+      LOW_TIME_SECONDS: 20, LOW_TIME_FRACTION: 0.10, SNAP_MOVE_SECONDS: 10,
+    };
+    const SCORE = {
+      BAND: { cat1: 1.00, cat2: 0.80, cat3: 0.85, cat4: 0.75, cat5: 0.80 },
+      CONF: { low: 0.55, medium: 0.80, high: 1.00 },
+      CAT1_EQ_REF: 0.60, CAT1_MW_REF: 0.70, CAT1_EQ_W: 0.6, CAT1_MW_W: 0.4,
+      CAT2_GAP_REF: 25, CAT2_SPOIL_REF: 0.50, CAT2_GAP_W: 0.6, CAT2_SPOIL_W: 0.4, CAT2_MIN_ENTRIES: 4,
+      CAT3_Z_REF: 1.5, CAT3_MIN_WIN: 8,
+      CAT4_DISASTER_SHARE_REF: 0.40, CAT4_SCATTER_REF: 20, CAT4_SCATTER_MIN_GAMES: 30, CAT4_SCATTER_GPF_FLOOR: 4, CAT4_C_DISCOUNT: 0.85,
+      CAT5_TL_REF: 0.30, CAT5_LT_REF: 0.40, CAT5_SNAP_REF: 0.40, CAT5_TL_W: 0.34, CAT5_LT_W: 0.33, CAT5_SN_W: 0.33, CAT5_MIN_LOSSES: 5,
+      SPEC_CAT4_MAX: 0.20, SPEC_CAT5_MAX: 0.10, SPEC_SNAP_GATE: 0.30,
+      TIE: 0.15, NO_LEAK_FLOOR: 0.12,
+    };
+    const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+    const clamp01 = x => clamp(x, 0, 1);
+    const sat = (x, ref) => x <= 0 ? 0 : clamp01(1 - Math.exp(-x / ref));
+    const apiError = (code, message) => Object.assign(new Error(message || `Lichess ${code}`), { code });
+
+    async function fetchGames(username, onProgress) {
+      const params = new URLSearchParams({
+        max: CONFIG.MAX_GAMES, rated: true, perfType: CONFIG.PERF_TYPES,
+        analysed: true, evals: true, clocks: true, opening: true, sort: 'dateDesc',
+      });
+      let res;
+      try {
+        res = await fetch(`https://lichess.org/api/games/user/${encodeURIComponent(username)}?${params}`,
+          { headers: { Accept: 'application/x-ndjson' } });
+      } catch (e) { throw apiError('network', e.message); }
+      if (res.status === 404) throw apiError(404);
+      if (res.status === 429) throw apiError(429);
+      if (!res.ok) throw apiError('http', `Lichess responded ${res.status}`);
+      const text = await res.text();
+      const games = [];
+      for (const line of text.split('\n')) { const t = line.trim(); if (t) { games.push(JSON.parse(t)); onProgress?.(games.length); } }
+      return games;
+    }
+
+    function analyzeGame(g, userId) {
+      const color = g.players.white.user?.id === userId ? 'w' : g.players.black.user?.id === userId ? 'b' : null;
+      const moves = (g.moves || '').split(' ').filter(Boolean);
+      if (!color || !g.analysis || moves.length === 0) return null;
+      const userIsWhite = color === 'w';
+      const result = !g.winner ? 'draw' : (g.winner === 'white') === userIsWhite ? 'win' : 'loss';
+      const evalAfter = moves.map((_, i) => {
+        const e = g.analysis[i];
+        if (!e) return null;
+        if (typeof e.eval === 'number') return clamp(e.eval, -CONFIG.EVAL_CEILING_CP, CONFIG.EVAL_CEILING_CP);
+        if (typeof e.mate === 'number') return e.mate > 0 ? CONFIG.EVAL_CEILING_CP : -CONFIG.EVAL_CEILING_CP;
+        return null;
+      });
+      const evalBefore = i => i === 0 ? 0 : evalAfter[i - 1];
+      const initialCs = (g.clock?.initial ?? 0) * 100;
+      const incrementCs = (g.clock?.increment ?? 0) * 100;
+      const clockAfter = i => g.clocks?.[i] ?? null;
+      const clockBefore = i => i >= 2 ? clockAfter(i - 2) : (initialCs || null);
+      const timeSpentCs = i => { const before = clockBefore(i), after = clockAfter(i); return before == null || after == null ? null : Math.max(0, before - after + incrementCs); };
+      const phaseBefore = [], legalMovesBefore = [];
+      const chess = new Chess();
+      let replayBroke = null;
+      for (let i = 0; i < moves.length; i++) {
+        const board = chess.board();
+        let qW = 0, qB = 0, ptsW = 0, ptsB = 0;
+        const pts = { n: 3, b: 3, r: 5, q: 9 };
+        for (const row of board) for (const sq of row) {
+          if (!sq || sq.type === 'p' || sq.type === 'k') continue;
+          if (sq.color === 'w') ptsW += pts[sq.type]; else ptsB += pts[sq.type];
+          if (sq.type === 'q') sq.color === 'w' ? qW++ : qB++;
+        }
+        const endgame = (qW === 0 && qB === 0) || (ptsW <= CONFIG.ENDGAME_NONPAWN_POINTS && ptsB <= CONFIG.ENDGAME_NONPAWN_POINTS);
+        phaseBefore.push(endgame ? 'endgame' : i < CONFIG.OPENING_EXIT_PLY ? 'opening' : 'middlegame');
+        legalMovesBefore.push(chess.moves().length);
+        try { chess.move(moves[i]); } catch (err) { replayBroke = `ply ${i}: ${moves[i]}`; break; }
+      }
+      const sign = userIsWhite ? 1 : -1;
+      const userPlies = [];
+      for (let i = userIsWhite ? 0 : 1; i < moves.length; i += 2) {
+        const before = evalBefore(i), after = evalAfter[i];
+        if (before == null || after == null) continue;
+        const swing = sign * before - sign * after;
+        userPlies.push({
+          ply: i, swing, cpl: Math.max(0, swing), evalBeforeWhitePov: before,
+          inSanityWindow: Math.abs(before) <= CONFIG.SANITY_WINDOW_CP,
+          equalish: Math.abs(before) <= CONFIG.EQUALISH_CP,
+          phase: phaseBefore[i] ?? null, legalMoves: legalMovesBefore[i] ?? null,
+          remainingBeforeCs: clockBefore(i), spentCs: timeSpentCs(i),
+        });
+      }
+      const isBlunder = p => p.inSanityWindow && p.swing >= CONFIG.BLUNDER_SWING_CP;
+      const povEvals = evalAfter.map(e => e == null ? null : sign * e);
+      let reachedWinning = false;
+      for (let i = 0; i + CONFIG.WINNING_SUSTAIN_PLIES - 1 < povEvals.length; i++) {
+        let ok = true;
+        for (let k = 0; k < CONFIG.WINNING_SUSTAIN_PLIES; k++) { if (povEvals[i + k] == null || povEvals[i + k] < CONFIG.WINNING_CP) { ok = false; break; } }
+        if (ok) { reachedWinning = true; break; }
+      }
+      const entryPly = phaseBefore.findIndex(ph => ph === 'endgame');
+      const endgameEntryEvalPov = entryPly >= 0 && evalBefore(entryPly) != null ? sign * evalBefore(entryPly) : null;
+      const exitIdx = Math.min(CONFIG.OPENING_EXIT_PLY, moves.length) - 1;
+      let openingExitEvalPov = null;
+      for (let i = exitIdx; i >= 0; i--) if (evalAfter[i] != null) { openingExitEvalPov = sign * evalAfter[i]; break; }
+      const openingFamily = (g.opening?.name || 'Unknown').split(':')[0].trim();
+      return {
+        id: g.id, speed: g.speed, result, status: g.status,
+        rating: g.players[userIsWhite ? 'white' : 'black'].rating,
+        lichessAcpl: g.players[userIsWhite ? 'white' : 'black'].analysis?.acpl ?? null,
+        userPlies, isBlunder, replayBroke, reachedWinning, endgameEntryEvalPov,
+        openingFamily, openingExitEvalPov, initialCs,
+      };
+    }
+
+    function aggregate(records) {
+      const n = records.length;
+      const all = records.flatMap(r => r.userPlies.map(p => ({ ...p, rec: r })));
+      const blunders = all.filter(p => p.rec.isBlunder(p));
+      const avg = xs => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+      const equalBlunders = blunders.filter(p => p.equalish);
+      const missedWins = all.filter(p => p.inSanityWindow && p.swing >= CONFIG.MISSED_WIN_GAIN_CP);
+      const egPlies = all.filter(p => p.phase === 'endgame');
+      const mgPlies = all.filter(p => p.phase === 'middlegame');
+      const egAcpl = avg(egPlies.map(p => p.cpl));
+      const mgAcpl = avg(mgPlies.map(p => p.cpl));
+      const goodEntries = records.filter(r => r.endgameEntryEvalPov != null && r.endgameEntryEvalPov >= CONFIG.ENDGAME_GOOD_ENTRY_CP);
+      const goodEntriesSpoiled = goodEntries.filter(r => r.result !== 'win');
+      const winningGames = records.filter(r => r.reachedWinning);
+      const notConverted = winningGames.filter(r => r.result !== 'win');
+      const families = {};
+      for (const r of records) {
+        (families[r.openingFamily] ??= { games: 0, exitEvals: [] }).games++;
+        if (r.openingExitEvalPov != null) families[r.openingFamily].exitEvals.push(r.openingExitEvalPov);
+      }
+      const familyRows = Object.entries(families).map(([name, f]) => ({
+        family: name, games: f.games,
+        avgExitEvalCp: avg(f.exitEvals) != null ? Math.round(avg(f.exitEvals)) : null,
+        disasters: f.exitEvals.filter(e => e <= CONFIG.DISASTER_EVAL_CP).length,
+      })).sort((a, b) => b.games - a.games);
+      const recurringDisasters = familyRows.filter(f => f.disasters >= CONFIG.DISASTER_MIN_COUNT);
+      const losses = records.filter(r => r.result === 'loss');
+      const timeLosses = losses.filter(r => r.status === 'outoftime');
+      const lowTime = p => p.remainingBeforeCs != null && (p.remainingBeforeCs < CONFIG.LOW_TIME_SECONDS * 100 || (p.rec.initialCs > 0 && p.remainingBeforeCs < CONFIG.LOW_TIME_FRACTION * p.rec.initialCs));
+      const lowTimeBlunders = blunders.filter(lowTime);
+      const snapBlunders = blunders.filter(p => p.spentCs != null && p.spentCs < CONFIG.SNAP_MOVE_SECONDS * 100 && p.legalMoves != null && p.legalMoves > 1);
+      const acplDiffs = records.filter(r => r.lichessAcpl != null && r.userPlies.length > 0).map(r => Math.abs(avg(r.userPlies.map(p => p.cpl)) - r.lichessAcpl));
+      const sortedRatings = records.map(r => r.rating).sort((a, b) => a - b);
+      const ratingMedian = sortedRatings[Math.floor((sortedRatings.length - 1) / 2)];
+      return {
+        n, ratingMin: Math.min(...records.map(r => r.rating)), ratingMax: Math.max(...records.map(r => r.rating)), ratingMedian,
+        cat1: { equalPositionBlundersPerGame: equalBlunders.length / n, equalPositionBlundersTotal: equalBlunders.length, missedWinsPerGame: missedWins.length / n, missedWinsTotal: missedWins.length, blundersTotalAnyPosition: blunders.length },
+        cat2: { endgameAcpl: egAcpl, middlegameAcpl: mgAcpl, endgameVsMiddlegameGapCp: egAcpl != null && mgAcpl != null ? egAcpl - mgAcpl : null, endgamePlies: egPlies.length, middlegamePlies: mgPlies.length, goodEndgameEntries: goodEntries.length, goodEntriesNotWon: goodEntriesSpoiled.length },
+        cat3: { gamesReachedWinning: winningGames.length, winningNotWon: notConverted.length, conversionFailureShare: winningGames.length ? notConverted.length / winningGames.length : null },
+        cat4: { distinctFamilies: familyRows.length, familyRows, recurringDisasters },
+        cat5: { losses: losses.length, lossesOnTime: timeLosses.length, lossesOnTimeShare: losses.length ? timeLosses.length / losses.length : null, blundersTotal: blunders.length, lowTimeBlunders: lowTimeBlunders.length, lowTimeBlunderShare: blunders.length ? lowTimeBlunders.length / blunders.length : null, snapBlunders: snapBlunders.length },
+      };
+    }
+
+    function confidenceLabel(n) { if (n < CONFIG.MIN_GAMES) return null; if (n <= 30) return 'low'; if (n <= 60) return 'medium'; return 'high'; }
+
+    function score(agg) {
+      const S = SCORE;
+      const clabel = confidenceLabel(agg.n);
+      if (!clabel) return { mode: 'refuse', n: agg.n, clabel: null };
+      const cf = S.CONF[clabel];
+      const c1 = agg.cat1, c2 = agg.cat2, c3 = agg.cat3, c4 = agg.cat4, c5 = agg.cat5;
+      const raw1 = S.CAT1_EQ_W * sat(c1.equalPositionBlundersPerGame, S.CAT1_EQ_REF) + S.CAT1_MW_W * sat(c1.missedWinsPerGame, S.CAT1_MW_REF);
+      const gapTerm = sat(Math.max(0, c2.endgameVsMiddlegameGapCp ?? 0), S.CAT2_GAP_REF);
+      const spoilTerm = c2.goodEndgameEntries > 0 ? sat(c2.goodEntriesNotWon / c2.goodEndgameEntries, S.CAT2_SPOIL_REF) * clamp01(c2.goodEndgameEntries / S.CAT2_MIN_ENTRIES) : 0;
+      const raw2 = S.CAT2_GAP_W * gapTerm + S.CAT2_SPOIL_W * spoilTerm;
+      let worstShare = 0, worstFamily = null;
+      for (const f of c4.recurringDisasters) { const share = f.games > 0 ? f.disasters / f.games : 0; if (share > worstShare) { worstShare = share; worstFamily = f; } }
+      const sigB = sat(worstShare, S.CAT4_DISASTER_SHARE_REF);
+      const gpf = agg.n / Math.max(1, c4.distinctFamilies);
+      const sigC = gpf < S.CAT4_SCATTER_GPF_FLOOR ? sat(c4.distinctFamilies, S.CAT4_SCATTER_REF) * clamp01(agg.n / S.CAT4_SCATTER_MIN_GAMES) : 0;
+      const raw4base = Math.max(sigB, S.CAT4_C_DISCOUNT * sigC);
+      let tl = sat(c5.lossesOnTimeShare ?? 0, S.CAT5_TL_REF);
+      if (c5.losses < S.CAT5_MIN_LOSSES) tl *= c5.losses / S.CAT5_MIN_LOSSES;
+      const lt = sat(c5.lowTimeBlunderShare ?? 0, S.CAT5_LT_REF);
+      const snapShare = c5.blundersTotal > 0 ? c5.snapBlunders / c5.blundersTotal : 0;
+      const sn = sat(snapShare, S.CAT5_SNAP_REF);
+      const raw5base = S.CAT5_TL_W * tl + S.CAT5_LT_W * lt + S.CAT5_SN_W * sn;
+      const peers = [raw1, raw2, raw4base, raw5base];
+      const peerMean = peers.reduce((a, b) => a + b, 0) / peers.length;
+      const peerSD = Math.sqrt(peers.reduce((a, b) => a + (b - peerMean) ** 2, 0) / peers.length);
+      let z = null, raw3 = 0;
+      if (c3.conversionFailureShare != null && c3.gamesReachedWinning >= S.CAT3_MIN_WIN) { z = (c3.conversionFailureShare - peerMean) / Math.max(peerSD, 1e-9); raw3 = z > 0 ? sat(z, S.CAT3_Z_REF) : 0; }
+      const raw4 = clamp01(raw4base + (worstFamily ? S.SPEC_CAT4_MAX * sat(worstShare, S.CAT4_DISASTER_SHARE_REF) : 0));
+      const snapBonusOn = snapShare >= S.SPEC_SNAP_GATE;
+      const raw5 = clamp01(raw5base + (snapBonusOn ? S.SPEC_CAT5_MAX * sat(snapShare, S.CAT5_SNAP_REF) : 0));
+      const raws = { cat1: raw1, cat2: raw2, cat3: raw3, cat4: raw4, cat5: raw5 };
+      const scores = {};
+      for (const k of ['cat1', 'cat2', 'cat3', 'cat4', 'cat5']) scores[k] = raws[k] * S.BAND[k] * cf;
+      const ranked = Object.entries(scores).map(([cat, sc]) => ({ cat, score: sc })).sort((a, b) => b.score - a.score);
+      return { mode: 'ok', n: agg.n, clabel, cf, raws, scores, ranked, ratingMedian: agg.ratingMedian };
+    }
+
+    // ==================================================================
+    // TRAINER
+    // ==================================================================
+    const SESSION_SIZE = 16;
+    const BAND_BELOW = 100, BAND_ABOVE = 200;   // band around the player's rating
+    const PACKS = { tactical: 'tactical-puzzles.json', endgame: 'endgame-puzzles.json' };
+
+    const el = id => document.getElementById(id);
+    const progressEl = el('progress'), trainerEl = el('trainer'), boardEl = el('board'),
+      promptEl = el('prompt'), statusEl = el('status'), showmeBtn = el('showme'),
+      nextBtn = el('next'), messageEl = el('message'), messageTextEl = el('messageText'),
+      noteEl = el('note'), loadBtn = el('load'), inputEl = el('username');
+
+    let board = null, packs = null, session = [], curIdx = 0, cur = null, game = null, curFen = null;
+    let wrongCount = 0, reverting = false, animating = false, inputEnabled = false, gen = 0;
+
+    const setStatus = (text, kind = '') => { statusEl.textContent = text; statusEl.dataset.kind = kind; boardEl.dataset.state = kind; };
+    const uciToMove = uci => ({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || undefined });
+    const colorWord = c => c === 'w' ? 'White' : 'Black';
+
+    function enableInput(color) { disableInput(); board.enableMoveInput(inputHandler, color === 'w' ? COLOR.white : COLOR.black); inputEnabled = true; }
+    function disableInput() { if (inputEnabled) { board.disableMoveInput(); inputEnabled = false; } }
+
+    function showSelection(square) {
+      board.removeMarkers();
+      board.addMarker(MARKER_TYPE.frame, square);
+      for (const m of game.moves({ square, verbose: true })) {
+        const capture = m.flags.includes('c') || m.flags.includes('e');
+        board.addMarker(capture ? MARKER_TYPE.circle : MARKER_TYPE.dot, m.to);
+      }
+    }
+    const clearSelection = () => board.removeMarkers();
+    function tryMove(from, to, promo) { const c = new Chess(curFen); try { return c.move({ from, to, promotion: promo || 'q' }); } catch { return null; } }
+
+    // ---- packs + session ----
+    async function loadPacks() {
+      if (packs) return packs;
+      const [t, e] = await Promise.all([
+        fetch(PACKS.tactical).then(r => { if (!r.ok) throw new Error(`pack ${r.status}`); return r.json(); }),
+        fetch(PACKS.endgame).then(r => { if (!r.ok) throw new Error(`pack ${r.status}`); return r.json(); }),
+      ]);
+      packs = { tactical: t.puzzles, endgame: e.puzzles };
+      return packs;
+    }
+    function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+    function pickFromPool(pool, n, R) {
+      if (n <= 0) return [];
+      let lo = R - BAND_BELOW, hi = R + BAND_ABOVE, widen = 0;
+      let band = pool.filter(p => p.rating >= lo && p.rating <= hi);
+      while (band.length < n && widen < 16) { widen++; lo -= 100; hi += 100; band = pool.filter(p => p.rating >= lo && p.rating <= hi); }
+      return shuffle(band.slice()).slice(0, n);
+    }
+    // Mix counts driven by the two severity scores in proportion to each other.
+    function buildSession(catTac, catEnd, R) {
+      let wT = catTac, wE = catEnd, even = false;
+      if (wT + wE < 1e-6) { wT = wE = 0.5; even = true; }   // no leak in either: fall back to even
+      const nT = Math.round(SESSION_SIZE * wT / (wT + wE));
+      const nE = SESSION_SIZE - nT;
+      const tac = pickFromPool(packs.tactical, nT, R);
+      const end = pickFromPool(packs.endgame, nE, R);
+      const seen = new Set(), out = [];
+      for (const p of shuffle(tac.concat(end))) { if (seen.has(p.id)) continue; seen.add(p.id); out.push({ ...p, movesArr: p.moves.split(' ') }); }
+      return { session: out, nT, nE, even, band: [R - BAND_BELOW, R + BAND_ABOVE] };
+    }
+
+    // ---- board input ----
+    function inputHandler(event) {
+      switch (event.type) {
+        case INPUT_EVENT_TYPE.moveInputStarted: {
+          const allowed = !animating && !reverting && !cur.done && game.moves({ square: event.square, verbose: true }).length > 0;
+          if (allowed) showSelection(event.square); else clearSelection();
+          return allowed;
+        }
+        case INPUT_EVENT_TYPE.validateMoveInput:
+          clearSelection();
+          return !!tryMove(event.squareFrom, event.squareTo);
+        case INPUT_EVENT_TYPE.moveInputCanceled:
+          clearSelection(); return;
+        case INPUT_EVENT_TYPE.moveInputFinished:
+          if (!cur.done && !animating && event.legalMove && event.squareFrom && event.squareTo && event.squareFrom !== event.squareTo) attempt(event.squareFrom, event.squareTo);
+          return;
+      }
+    }
+
+    function attempt(from, to) {
+      const expected = cur.movesArr[cur.solIndex];
+      const piece = game.get(from);
+      let promo = null;
+      if (piece && piece.type === 'p' && (to[1] === '8' || to[1] === '1'))
+        promo = (expected.slice(0, 2) === from && expected.slice(2, 4) === to && expected[4]) ? expected[4] : 'q';
+      const uci = from + to + (promo || '');
+      let correct = uci === expected;
+      if (!correct) { try { const c = new Chess(curFen); c.move({ from, to, promotion: promo || 'q' }); correct = c.isCheckmate(); } catch {} }
+      if (correct) onCorrect(from, to, promo); else onWrong(from, to);
+    }
+
+    function onCorrect(from, to, promo) {
+      game.move({ from, to, promotion: promo || 'q' });
+      curFen = game.fen();
+      clearSelection();
+      board.setPosition(curFen, false);
+      if (cur.solIndex >= cur.movesArr.length - 1) { onSolved(); return; }
+      // play the opponent's reply, then hand back the move
+      cur.solIndex += 1;
+      const replyUci = cur.movesArr[cur.solIndex];
+      cur.solIndex += 1;
+      animating = true; disableInput();
+      setStatus('Good. Keep going.', 'correct');
+      const g = gen;
+      setTimeout(() => {
+        if (g !== gen) return;
+        game.move(uciToMove(replyUci));
+        curFen = game.fen();
+        board.setPosition(curFen, true);
+        animating = false;
+        enableInput(cur.solverColor);
+        setStatus('Your move.', '');
+      }, 450);
+    }
+
+    function onWrong(from, to) {
+      wrongCount += 1;
+      const mv = tryMove(from, to);
+      setStatus(`${mv ? mv.san : from + '-' + to}? Not the move here. Try again.`, 'wrong');
+      reverting = true;
+      const g = gen;
+      setTimeout(() => { if (g !== gen) return; if (cur.done) { reverting = false; return; } board.setPosition(curFen, true); reverting = false; }, 550);
+      if (wrongCount >= 2) showmeBtn.hidden = false;
+    }
+
+    function onSolved() {
+      cur.done = true; disableInput(); clearSelection(); showmeBtn.hidden = true;
+      setStatus('Solved.', 'correct');
+      showPuzzleLink();
+      nextBtn.hidden = false; nextBtn.focus();
+    }
+
+    function doShowMe() {
+      cur.done = true; disableInput(); clearSelection(); showmeBtn.hidden = true; animating = true;
+      // precompute the remaining line (SANs + FENs) from a clone, then schedule each
+      // board render on its OWN timer and finalize on a SEPARATE timer, so a hiccup in
+      // one animated render can never strand the "Next" button.
+      const sim = new Chess(curFen);
+      const rest = cur.movesArr.slice(cur.solIndex);
+      const sanLine = [], fens = [];
+      for (const uci of rest) { try { sanLine.push(sim.move(uciToMove(uci)).san); fens.push(sim.fen()); } catch { break; } }
+      setStatus(`The line was ${sanLine.join(' ')}.`, 'shown');
+      const g = gen, STEP_MS = 600;
+      fens.forEach((f, k) => setTimeout(() => { if (g !== gen) return; game.load(f); curFen = f; board.setPosition(f, true); }, (k + 1) * STEP_MS));
+      setTimeout(() => {
+        if (g !== gen) return;
+        animating = false; showPuzzleLink();
+        nextBtn.hidden = false; nextBtn.focus();
+      }, (fens.length + 1) * STEP_MS + 100);
+    }
+
+    function showPuzzleLink() {
+      el('puzzlelink').innerHTML = `<a href="https://lichess.org/training/${cur.id}" target="_blank" rel="noopener">See this puzzle on Lichess</a>`;
+      el('puzzlelink').hidden = false;
+    }
+
+    function loadPuzzle(idx) {
+      gen++;
+      curIdx = idx; cur = session[idx];
+      cur.done = false; cur.solIndex = 1;
+      wrongCount = 0; reverting = false; animating = true;
+      game = new Chess(cur.fen);
+      cur.solverColor = game.turn() === 'w' ? 'b' : 'w';   // solver moves after the opponent's setup move
+      const want = cur.solverColor === 'w' ? COLOR.white : COLOR.black;
+      if (board.getOrientation() !== want) board.setOrientation(want);
+      board.setPosition(cur.fen, false);
+      board.removeMarkers();
+      disableInput();
+      showmeBtn.hidden = true; nextBtn.hidden = true;
+      el('puzzlelink').hidden = true; el('puzzlelink').innerHTML = '';
+      curFen = cur.fen;
+      promptEl.textContent = `You are ${colorWord(cur.solverColor)}. Find the best move.`;
+      setStatus('...', '');
+      progressEl.textContent = `Puzzle ${idx + 1} of ${session.length} · ${cur.theme} · ${cur.rating}`;
+      // play the opponent's setup move, then enable input
+      const g = gen;
+      setTimeout(() => {
+        if (g !== gen) return;
+        game.move(uciToMove(cur.movesArr[0]));
+        curFen = game.fen();
+        board.setPosition(curFen, true);
+        animating = false;
+        enableInput(cur.solverColor);
+        setStatus('Your move. Drag or tap a piece.', '');
+      }, 500);
+    }
+
+    function nextPuzzle() { if (curIdx + 1 < session.length) loadPuzzle(curIdx + 1); else finish(); }
+    function finish() {
+      gen++; disableInput(); if (board) board.removeMarkers();
+      trainerEl.hidden = true; messageEl.hidden = false;
+      messageTextEl.textContent = `That is the set, ${session.length} puzzles. Run it again for a fresh mix on your weak spots.`;
+      progressEl.textContent = `Done. ${session.length} puzzles.`;
+    }
+
+    function renderMix(info, catTac, catEnd, R) {
+      const pct = x => Math.round(100 * x);
+      const tShare = info.nT / (info.nT + info.nE || 1);
+      el('mix').innerHTML =
+        `Tactical safety ${catTac.toFixed(2)} · Endgames ${catEnd.toFixed(2)}` +
+        (info.even ? ' (no clear leak in either, so an even split)' : '') +
+        `<br>This set: ${info.nT} tactical + ${info.nE} endgame, rated about ${info.band[0]} to ${info.band[1]} (you: ${R}).` +
+        `<div class="bars"><div class="seg tac" style="flex:${Math.max(info.nT, 0.001)}"></div><div class="seg end" style="flex:${Math.max(info.nE, 0.001)}"></div></div>`;
+    }
+
+    // ---- run ----
+    async function run() {
+      const username = inputEl.value.trim();
+      if (!username) { progressEl.textContent = 'Enter your username first.'; return; }
+      loadBtn.disabled = true; gen++;
+      trainerEl.hidden = true; messageEl.hidden = true; noteEl.textContent = '';
+      progressEl.textContent = `Reading ${username}'s analyzed games...`;
+      let games, agg, sc;
+      try {
+        const [g] = await Promise.all([
+          fetchGames(username, k => { progressEl.textContent = `Reading ${username}'s games... ${k}`; }),
+          loadPacks(),
+        ]);
+        games = g;
+      } catch (e) {
+        progressEl.textContent = e.code === 404 ? `No Lichess account called "${username}".` : e.code === 429 ? 'Lichess is rate limiting. Wait a minute and retry.' : `Could not load: ${e.message}`;
+        loadBtn.disabled = false; return;
+      }
+      const userId = username.toLowerCase();
+      const records = games.map(g => analyzeGame(g, userId)).filter(Boolean);
+      if (records.length < CONFIG.MIN_GAMES) {
+        trainerEl.hidden = true; messageEl.hidden = false;
+        messageTextEl.textContent = `Only ${records.length} analyzed rapid or classical games for ${username}. Need at least ${CONFIG.MIN_GAMES} to read your weaknesses. Get a few more games analyzed on Lichess and try again.`;
+        progressEl.textContent = 'Not enough to build a session.'; loadBtn.disabled = false; return;
+      }
+      agg = aggregate(records); sc = score(agg);
+      const catTac = sc.scores.cat1, catEnd = sc.scores.cat2, R = agg.ratingMedian;
+      window.__twSev = { catTac, catEnd, R, n: agg.n, clabel: sc.clabel, raws: sc.raws, scores: sc.scores };
+      const info = buildSession(catTac, catEnd, R);
+      session = info.session;
+      if (session.length === 0) {
+        trainerEl.hidden = true; messageEl.hidden = false;
+        messageTextEl.textContent = `Could not assemble puzzles near your rating (${R}). This should not happen with the bundled packs; tell Ari if it does.`;
+        progressEl.textContent = 'No session.'; loadBtn.disabled = false; return;
+      }
+      if (board) { board.destroy(); board = null; }
+      boardEl.innerHTML = '';
+      board = new Chessboard(boardEl, {
+        position: session[0].fen,
+        orientation: (new Chess(session[0].fen).turn() === 'w' ? COLOR.black : COLOR.white),
+        assetsUrl: ASSETS, responsive: true,
+        style: { cssClass: 'default', borderType: BORDER_TYPE.frame, pieces: { file: 'pieces/standard.svg' }, animationDuration: 280 },
+        extensions: [{ class: Markers, props: { autoMarkers: null } }],
+      });
+      messageEl.hidden = true; trainerEl.hidden = false;
+      renderMix(info, catTac, catEnd, R);
+      noteEl.textContent = `Based on ${agg.n} analyzed games (confidence ${sc.clabel}). Puzzles from the Lichess puzzle database, themes mapped to your two puzzle-trainable weaknesses.`;
+      loadBtn.disabled = false;
+      loadPuzzle(0);
+    }
+
+    loadBtn.addEventListener('click', run);
+    inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+    showmeBtn.addEventListener('click', doShowMe);
+    nextBtn.addEventListener('click', nextPuzzle);
+
+    // Test hook (harness): drive the same handler logic synchronously.
+    window.__tw = {
+      count: () => session.length,
+      mix: () => session.length ? null : null,
+      cur: () => cur && ({ idx: curIdx, id: cur.id, theme: cur.theme, rating: cur.rating, solver: cur.solverColor, solIndex: cur.solIndex, done: cur.done, moves: cur.movesArr, fen: cur.fen }),
+      sessionInfo: () => ({ count: session.length, themes: session.map(s => s.theme), ratings: session.map(s => s.rating) }),
+      severities: () => window.__twSev || null,
+      forceRender: () => board.setPosition(curFen, false),
+      status: () => statusEl.textContent,
+      select: (sq) => ({ allowed: inputHandler({ type: INPUT_EVENT_TYPE.moveInputStarted, square: sq }), markers: board.getMarkers().map(m => ({ square: m.square, cls: m.type.class })) }),
+      simulate: (from, to) => {
+        const started = inputHandler({ type: INPUT_EVENT_TYPE.moveInputStarted, square: from });
+        if (started === false) return { pickedUp: false, status: statusEl.textContent };
+        const legal = inputHandler({ type: INPUT_EVENT_TYPE.validateMoveInput, squareFrom: from, squareTo: to });
+        inputHandler({ type: INPUT_EVENT_TYPE.moveInputFinished, squareFrom: from, squareTo: to, legalMove: legal });
+        return { pickedUp: true, legal, status: statusEl.textContent, solIndex: cur.solIndex, done: cur.done, showmeHidden: showmeBtn.hidden };
+      },
+      // play the opponent setup synchronously (skip the timeout) so tests can solve immediately
+      primeOpponent: () => { game.move(uciToMove(cur.movesArr[0])); curFen = game.fen(); cur.solIndex = 1; animating = false; board.setPosition(curFen, false); return { curFen, expected: cur.movesArr[cur.solIndex] }; },
+      next: nextPuzzle,
+    };
+  </script>
+</body>
+</html>
