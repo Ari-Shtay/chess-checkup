@@ -28,19 +28,25 @@
     button[hidden] { display:none; }
 
     .progress { font-family:var(--mono); font-size:.72rem; letter-spacing:.04em; color:var(--soft); text-transform:uppercase; margin:0 0 .5rem; min-height:1em; }
-    .boardwrap { width:min(92vw,440px); margin:0 auto; }
-    .board { width:100%; border:3px solid var(--rule); border-radius:2px; transition:border-color .15s; }
+    .boardwrap { width:min(92vw,452px); margin:0 auto; }
+    .boardrow { display:flex; gap:8px; align-items:stretch; }
+    .evalbar { flex:0 0 16px; position:relative; background:var(--ink); border:1px solid var(--ink); border-radius:2px; overflow:hidden; }
+    .evalfill { position:absolute; left:0; right:0; bottom:0; height:50%; background:var(--paper); transition:height .55s ease; }
+    .board { flex:1 1 auto; min-width:0; border:3px solid var(--rule); border-radius:2px; transition:border-color .15s; }
     .board[data-state="correct"] { border-color:var(--good); }
     .board[data-state="wrong"] { border-color:var(--accent); }
     .board[data-state="shown"] { border-color:var(--soft); }
-    .prompt { font-size:1.05rem; margin:1rem auto 0; width:min(92vw,440px); min-height:1.4em; }
-    .status { font-family:var(--mono); font-size:.92rem; line-height:1.45; min-height:3.6em; margin:.7rem auto 0; width:min(92vw,440px); }
+    .prompt { font-size:1.05rem; margin:1rem auto 0; width:min(92vw,452px); min-height:1.4em; }
+    .status { font-family:var(--mono); font-size:.92rem; line-height:1.45; min-height:3.6em; margin:.7rem auto 0; width:min(92vw,452px); }
     .status[data-kind="correct"] { color:var(--good); }
     .status[data-kind="wrong"] { color:var(--accent); }
-    .actions { display:flex; gap:.6rem; margin:.5rem auto 0; width:min(92vw,440px); }
-    .note { font-family:var(--mono); font-size:.72rem; color:var(--soft); margin:1.4rem auto 0; width:min(92vw,440px); word-break:break-word; border-top:1px solid var(--rule); padding-top:.7rem; }
+    .actions { display:flex; gap:.6rem; margin:.5rem auto 0; width:min(92vw,452px); }
+    .note { font-family:var(--mono); font-size:.72rem; color:var(--soft); margin:1.4rem auto 0; width:min(92vw,452px); word-break:break-word; border-top:1px solid var(--rule); padding-top:.7rem; }
     .big { font-size:1.15rem; line-height:1.5; }
+    .evalcaption { font-family:var(--mono); font-size:.72rem; color:var(--soft); margin:.45rem auto 0; width:min(92vw,452px); min-height:1em; }
+    .gamelink { font-family:var(--mono); font-size:.8rem; margin:.8rem auto 0; width:min(92vw,452px); }
     a { color:var(--accent); }
+    @media (max-width:480px) { .evalbar { flex-basis:13px; } .boardrow { gap:6px; } }
   </style>
 </head>
 <body>
@@ -56,13 +62,21 @@
     <p class="progress" id="progress"></p>
 
     <div id="trainer" hidden>
-      <div class="boardwrap"><div class="board" id="board"></div></div>
+      <div class="boardwrap">
+        <div class="boardrow">
+          <div class="evalbar" aria-hidden="true"><div class="evalfill" id="evalfill"></div></div>
+          <div class="board" id="board"></div>
+        </div>
+        <p class="evalcaption" id="evalcaption"></p>
+      </div>
       <p class="prompt" id="prompt"></p>
       <p class="status" id="status"></p>
       <div class="actions">
         <button id="showme" type="button" class="ghost" hidden>Show me</button>
+        <button id="reveal" type="button" hidden>See what you actually played</button>
         <button id="next" type="button" hidden>Next</button>
       </div>
+      <p class="gamelink" id="gamelink" hidden></p>
     </div>
 
     <div id="message" hidden><p class="big" id="messageText"></p></div>
@@ -83,7 +97,7 @@
     const progressEl = el('progress'), trainerEl = el('trainer'), boardEl = el('board'),
       promptEl = el('prompt'), statusEl = el('status'), showmeBtn = el('showme'),
       nextBtn = el('next'), messageEl = el('message'), messageTextEl = el('messageText'),
-      noteEl = el('note'), loadBtn = el('load'), inputEl = el('username');
+      revealBtn = el('reveal'), noteEl = el('note'), loadBtn = el('load'), inputEl = el('username');
 
     // ---- state ----
     let board = null, positions = [], curIdx = 0, cur = null, game = null;
@@ -92,6 +106,24 @@
     // ---- helpers ----
     const evW = e => !e ? null : (typeof e.eval === 'number' ? Math.max(-1000, Math.min(1000, e.eval)) : (typeof e.mate === 'number' ? (e.mate > 0 ? 1000 : -1000) : null));
     const setStatus = (text, kind = '') => { statusEl.textContent = text; statusEl.dataset.kind = kind; boardEl.dataset.state = kind; };
+
+    // ---- static eval bar: driven only by stored analysis evals, no live engine ----
+    // Lichess win-probability curve (white POV) -> white's share of the bar height.
+    const winPercent = cp => 50 + 50 * Math.max(-1, Math.min(1, 2 / (1 + Math.exp(-0.00368208 * cp)) - 1));
+    // user-POV pawns, for the caption ("+1.4" / "-4.0"); placeholder copy.
+    const evalPawns = cpUser => (cpUser > 0 ? '+' : '') + (cpUser / 100).toFixed(1);
+    // Fill white's portion from white's side of the board. Board is oriented to the
+    // user, so white is at the bottom only when the user plays white; otherwise flip.
+    function setEvalBar(whiteCp) {
+      const fill = el('evalfill');
+      if (!fill) return;
+      const whiteWin = winPercent(whiteCp);
+      fill.style.height = whiteWin.toFixed(1) + '%';
+      // anchor white's portion to white's edge; set both sides explicitly so the
+      // fill never depends on the CSS default when the orientation flips.
+      if (cur.userColor === 'w') { fill.style.bottom = '0'; fill.style.top = 'auto'; }
+      else { fill.style.top = '0'; fill.style.bottom = 'auto'; }
+    }
 
     function enableInput(color) {
       disableInput();
@@ -138,7 +170,7 @@
           if (!fenAfterBest || !fenAfterUser) continue;
           out.push({ gameId: g.id, ply: i, userColor: color, fenBefore, bestUci: e.best, bestSan, fenAfterBest,
             userSan: played.san, userFrom: played.from, userTo: played.to, userPromo: played.promotion || null, fenAfterUser,
-            before, after, swing, mateAfter: typeof e.mate === 'number', moveNo: Math.floor(i / 2) + 1 });
+            before, after, swing, evalWBefore: bW, evalWAfter: aW, mateAfter: typeof e.mate === 'number', moveNo: Math.floor(i / 2) + 1 });
         }
       }
       // meaningful puzzles first (you were not already lost), recent order preserved
@@ -221,13 +253,16 @@
       if (wrongCount >= 2) showmeBtn.hidden = false;
     }
 
+    // First moment: the result of their attempt. It sits on screen with a button;
+    // the real blunder is NOT shown until they tap it (see doReveal).
     function onSolved() {
       cur.done = true;
       disableInput();
       clearSelection();
       showmeBtn.hidden = true;
       setStatus(`Yes. ${cur.bestSan} was the move.`, 'correct');
-      reveal(true);
+      revealBtn.hidden = false;
+      revealBtn.focus();
     }
 
     function doShowMe() {
@@ -237,31 +272,31 @@
       showmeBtn.hidden = true;
       setStatus(`The move was ${cur.bestSan}.`, 'shown');
       board.setPosition(cur.fenAfterBest, true);
-      const g = gen;
-      setTimeout(() => { if (g === gen) reveal(false); }, 1200);
+      revealBtn.hidden = false;
+      revealBtn.focus();
     }
 
-    // The reveal: a beat, then play their actual blunder, then the (scaled) roast.
-    // Uses setTimeout (not awaited animations) so the text lands even if a frame stalls,
-    // and a generation token so a stale reveal never writes onto a new position.
-    function reveal(solved) {
+    // Second moment, only on tap: reset to the position, play their real blunder,
+    // then the scaled roast, then Next. setTimeout (not awaited animations) so the
+    // text lands even if a frame stalls; a generation token blocks a stale reveal.
+    function doReveal() {
+      revealBtn.hidden = true;
       revealing = true;
-      disableInput();
       const g = gen;
-      const lead = solved ? `Yes. ${cur.bestSan} was the move. ` : `${cur.bestSan} was the move. `;
-      setStatus(lead + 'Now, what you actually did...', solved ? 'correct' : 'shown');
+      board.setPosition(cur.fenBefore, false);
       setTimeout(() => {
         if (g !== gen) return;
-        board.setPosition(cur.fenBefore, false);
-        setTimeout(() => {
-          if (g !== gen) return;
-          board.setPosition(cur.fenAfterUser, true);
-          setStatus(`You played ${cur.userSan}. ${cur.roast}`, 'wrong');
-          revealing = false;
-          nextBtn.hidden = false;
-          nextBtn.focus();
-        }, 350);
-      }, 1000);
+        board.setPosition(cur.fenAfterUser, true);
+        setEvalBar(cur.evalWAfter);                       // the bar swings with the blunder
+        el('evalcaption').textContent = `Engine eval: ${evalPawns(cur.before)} before, ${evalPawns(cur.after)} after your move. That is the drop.`;
+        const linkColor = cur.userColor === 'w' ? 'white' : 'black';
+        el('gamelink').innerHTML = `<a href="https://lichess.org/${cur.gameId}/${linkColor}#${cur.ply + 1}" target="_blank" rel="noopener">See this game on Lichess</a>`;
+        el('gamelink').hidden = false;
+        setStatus(`You played ${cur.userSan}. ${cur.roast}`, 'wrong');
+        revealing = false;
+        nextBtn.hidden = false;
+        nextBtn.focus();
+      }, 300);
     }
 
     function loadPosition(idx) {
@@ -278,7 +313,11 @@
       board.removeMarkers();
       enableInput(cur.userColor);
       showmeBtn.hidden = true;
+      revealBtn.hidden = true;
       nextBtn.hidden = true;
+      el('gamelink').hidden = true; el('gamelink').innerHTML = '';
+      setEvalBar(cur.evalWBefore);
+      el('evalcaption').textContent = `Engine eval here: ${evalPawns(cur.before)} from your side.`;
       promptEl.textContent = `You are ${cur.userColor === 'w' ? 'White' : 'Black'} and you are about to blunder. Find the move you missed.`;
       setStatus('Drag or tap a piece.', '');
       progressEl.textContent = `Blunder ${idx + 1} of ${positions.length}`;
@@ -354,6 +393,7 @@
     loadBtn.addEventListener('click', run);
     inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
     showmeBtn.addEventListener('click', doShowMe);
+    revealBtn.addEventListener('click', doReveal);
     nextBtn.addEventListener('click', nextPosition);
 
     // Test hook (harness): drive the same handler logic synchronously.
@@ -369,6 +409,8 @@
         return { pickedUp: true, legal, status: statusEl.textContent, wrongCount, done: cur.done, showmeHidden: showmeBtn.hidden };
       },
       status: () => statusEl.textContent,
+      evalBar: () => { const f = el('evalfill'); return { height: f.style.height, bottom: f.style.bottom, top: f.style.top, caption: el('evalcaption').textContent }; },
+      gameLink: () => { const a = el('gamelink').querySelector('a'); return { hidden: el('gamelink').hidden, href: a ? a.getAttribute('href') : null, text: a ? a.textContent : null }; },
       clearRevert: () => { reverting = false; },
       next: nextPosition,
       roastSamples: () => positions.map((b, i) => ({ swing: b.swing, before: b.before, after: b.after, roast: roastFor(b, i) })),
