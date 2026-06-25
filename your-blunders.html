@@ -24,6 +24,7 @@
     #username:focus { outline:none; border-bottom-color:var(--accent); }
     button { font-family:var(--mono); font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; padding:.6rem 1rem; border:1px solid var(--ink); background:var(--ink); color:var(--paper); border-radius:0; cursor:pointer; }
     button.ghost { background:var(--paper); color:var(--ink); }
+    button.arming { background:var(--accent); border-color:var(--accent); color:var(--paper); }
     button:disabled { opacity:.45; cursor:default; }
     button[hidden] { display:none; }
 
@@ -101,7 +102,7 @@
 
     // ---- state ----
     let board = null, positions = [], curIdx = 0, cur = null, game = null;
-    let wrongCount = 0, reverting = false, revealing = false, inputEnabled = false, gen = 0;
+    let wrongCount = 0, reverting = false, revealing = false, inputEnabled = false, gen = 0, showmeArmed = false;
 
     // ---- helpers ----
     const evW = e => !e ? null : (typeof e.eval === 'number' ? Math.max(-1000, Math.min(1000, e.eval)) : (typeof e.mate === 'number' ? (e.mate > 0 ? 1000 : -1000) : null));
@@ -223,6 +224,7 @@
     }
 
     function attempt(from, to) {
+      if (showmeArmed) resetShowme();   // a real try cancels a pending give-up
       const piece = game.get(from);
       let promo = null;
       if (piece && piece.type === 'p' && (to[1] === '8' || to[1] === '1')) {
@@ -250,7 +252,6 @@
         board.setPosition(cur.fenBefore, true);
         reverting = false;
       }, 600);
-      if (wrongCount >= 2) showmeBtn.hidden = false;
     }
 
     // First moment: the result of their attempt. It sits on screen with a button;
@@ -274,6 +275,15 @@
       board.setPosition(cur.fenAfterBest, true);
       revealBtn.hidden = false;
       revealBtn.focus();
+    }
+
+    // Two-step give-up: the control is there from the start, but revealing takes a
+    // deliberate second confirming tap so it is not a one-tap reflex.
+    function resetShowme() { showmeArmed = false; showmeBtn.classList.remove('arming'); showmeBtn.textContent = 'Show me'; }
+    function onShowmeClick() {
+      if (cur.done) return;
+      if (!showmeArmed) { showmeArmed = true; showmeBtn.classList.add('arming'); showmeBtn.textContent = 'Show the answer?'; }
+      else { resetShowme(); doShowMe(); }
     }
 
     // Second moment, only on tap: reset to the position, play their real blunder,
@@ -312,7 +322,7 @@
       board.setPosition(cur.fenBefore, false);
       board.removeMarkers();
       enableInput(cur.userColor);
-      showmeBtn.hidden = true;
+      showmeBtn.hidden = false; resetShowme();
       revealBtn.hidden = true;
       nextBtn.hidden = true;
       el('gamelink').hidden = true; el('gamelink').innerHTML = '';
@@ -392,7 +402,7 @@
 
     loadBtn.addEventListener('click', run);
     inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
-    showmeBtn.addEventListener('click', doShowMe);
+    showmeBtn.addEventListener('click', onShowmeClick);
     revealBtn.addEventListener('click', doReveal);
     nextBtn.addEventListener('click', nextPosition);
 
@@ -409,6 +419,8 @@
         return { pickedUp: true, legal, status: statusEl.textContent, wrongCount, done: cur.done, showmeHidden: showmeBtn.hidden };
       },
       status: () => statusEl.textContent,
+      showme: () => ({ hidden: showmeBtn.hidden, text: showmeBtn.textContent, armed: showmeArmed }),
+      clickShowme: () => { onShowmeClick(); return { hidden: showmeBtn.hidden, text: showmeBtn.textContent, armed: showmeArmed, done: cur.done, status: statusEl.textContent }; },
       evalBar: () => { const f = el('evalfill'); return { height: f.style.height, bottom: f.style.bottom, top: f.style.top, caption: el('evalcaption').textContent }; },
       gameLink: () => { const a = el('gamelink').querySelector('a'); return { hidden: el('gamelink').hidden, href: a ? a.getAttribute('href') : null, text: a ? a.textContent : null }; },
       clearRevert: () => { reverting = false; },

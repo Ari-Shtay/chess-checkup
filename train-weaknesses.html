@@ -24,6 +24,7 @@
     #username:focus { outline:none; border-bottom-color:var(--accent); }
     button { font-family:var(--mono); font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; padding:.6rem 1rem; border:1px solid var(--ink); background:var(--ink); color:var(--paper); border-radius:0; cursor:pointer; }
     button.ghost { background:var(--paper); color:var(--ink); }
+    button.arming { background:var(--accent); border-color:var(--accent); color:var(--paper); }
     button:disabled { opacity:.45; cursor:default; }
     button[hidden] { display:none; }
 
@@ -316,7 +317,7 @@
       noteEl = el('note'), loadBtn = el('load'), inputEl = el('username');
 
     let board = null, packs = null, session = [], curIdx = 0, cur = null, game = null, curFen = null;
-    let wrongCount = 0, reverting = false, animating = false, inputEnabled = false, gen = 0;
+    let wrongCount = 0, reverting = false, animating = false, inputEnabled = false, gen = 0, showmeArmed = false;
     let posHistory = [], viewIdx = 0, savedStatus = null;   // arrow-key review of the moves played so far
 
     const nextPaint = () => new Promise(r => setTimeout(r, 0));   // setTimeout, not rAF: the headless preview never paints
@@ -447,6 +448,7 @@
     }
 
     function attempt(from, to) {
+      if (showmeArmed) resetShowme();   // a real try cancels a pending give-up
       const expected = cur.movesArr[cur.solIndex];
       const piece = game.get(from);
       let promo = null;
@@ -491,7 +493,6 @@
       reverting = true;
       const g = gen;
       setTimeout(() => { if (g !== gen) return; if (cur.done) { reverting = false; return; } board.setPosition(curFen, true); reverting = false; }, 550);
-      if (wrongCount >= 2) showmeBtn.hidden = false;
     }
 
     function onSolved() {
@@ -518,6 +519,15 @@
         animating = false; showPuzzleLink();
         nextBtn.hidden = false; nextBtn.focus();
       }, (fens.length + 1) * STEP_MS + 100);
+    }
+
+    // Two-step give-up: the control is there from the start, but revealing takes a
+    // deliberate second confirming tap so it is not a one-tap reflex.
+    function resetShowme() { showmeArmed = false; showmeBtn.classList.remove('arming'); showmeBtn.textContent = 'Show me'; }
+    function onShowmeClick() {
+      if (cur.done) return;
+      if (!showmeArmed) { showmeArmed = true; showmeBtn.classList.add('arming'); showmeBtn.textContent = 'Show the answer?'; }
+      else { resetShowme(); doShowMe(); }
     }
 
     function showPuzzleLink() {
@@ -554,6 +564,7 @@
         board.setPosition(curFen, true);
         animating = false;
         enableInput(cur.solverColor);
+        showmeBtn.hidden = false; resetShowme();
         setStatus('Your move. Drag or tap a piece.', '');
       }, 500);
     }
@@ -636,7 +647,7 @@
 
     loadBtn.addEventListener('click', run);
     inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
-    showmeBtn.addEventListener('click', doShowMe);
+    showmeBtn.addEventListener('click', onShowmeClick);
     nextBtn.addEventListener('click', nextPuzzle);
     window.addEventListener('keydown', onKey);   // arrow-key review
 
@@ -649,6 +660,8 @@
       severities: () => window.__twSev || null,
       forceRender: () => board.setPosition(curFen, false),
       status: () => statusEl.textContent,
+      showme: () => ({ hidden: showmeBtn.hidden, text: showmeBtn.textContent, armed: showmeArmed }),
+      clickShowme: () => { onShowmeClick(); return { hidden: showmeBtn.hidden, text: showmeBtn.textContent, armed: showmeArmed, done: cur.done, status: statusEl.textContent }; },
       review: () => ({ viewIdx, histLen: posHistory.length, atLive: viewIdx === posHistory.length - 1, boardPos: board.getPosition().split(' ')[0], inputEnabled }),
       key: (dir) => { onKey({ key: dir < 0 ? 'ArrowLeft' : 'ArrowRight', preventDefault() {}, target: { tagName: 'BODY' } }); return { viewIdx, histLen: posHistory.length, atLive: viewIdx === posHistory.length - 1, boardPos: board.getPosition().split(' ')[0], status: statusEl.textContent, inputEnabled }; },
       loadHostHTML: () => el('loadhost').innerHTML,
